@@ -19,7 +19,7 @@ Available tools
 - `scripts/publish_traj`: takes an SVG file as input and publishes it as a ROS
   topic (`/write_traj`). Can also optionally display it in RViz.
   
-  - `scripts/show_traj_onebyone`: takes an SVG file as input and publishes it 
+- `scripts/show_traj_onebyone`: takes an SVG file as input and publishes it 
   as a ROS display topic (`/visualization_markers`) for displaying as in RViz
   as an animation.
 
@@ -27,7 +27,7 @@ Available tools
   `write_traj` and generates the corresponding joint-space trajectory using
   naoqi via pyrobots.
 
-  - `scripts/nao_write_moveit.py`: reads a cartesian trajectory from ROS topic 
+- `scripts/nao_write_moveit.py`: reads a cartesian trajectory from ROS topic 
   `write_traj` and generates the corresponding joint-space trajectory using
   MoveIt (work in progress).
 
