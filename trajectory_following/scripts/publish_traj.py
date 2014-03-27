@@ -1,0 +1,172 @@
+#!/usr/bin/env python
+
+"""
+Takes a SVG file containing a path as input, and publish the corresponding trajectory
+on the 'write_traj' topic using MultiDOFJointTrajectoryPoints in ROS Hydro format 
+(will not work on Groovy or earlier versions unless "--nowrite" option is used).
+
+If started with a "--show" option, it also publishes the trajectory with markers
+on the visualization_markers topic.
+
+If started with a "--nowrite" option, the trajectory will be calculated but not published 
+on the 'write_traj' topic.
+
+Requires:
+    - svg2traj (which itself relies on softMotion-libs) to compute the trajectory
+    OR
+    - svg_subsampler to compute the trajectory (from cowriter-trajectory-generator)
+
+Trajectory coordinates are published in the 'paper_sheet' frame. You may want to first
+broadcast it.
+"""
+#SVG_SAMPLER = "svg2traj"
+SVG_SAMPLER = "svg_subsampler"
+
+# svg_subsampler parameters
+SAMPLE_DENSITY = 5 # points per cm
+SAMPLE_TYPE = "homogeneous"
+#SAMPLE_TYPE = "curvature"
+PAPER_HEIGHT = 0.297 # metres (used for displaying svg_subsampler results)
+dt = 0.1; #seconds between points in traj
+
+import logging
+logger = logging.getLogger("write." + __name__)
+logger.setLevel(logging.DEBUG)
+
+handler = logging.StreamHandler()
+handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('[%(levelname)s] %(name)s -> %(message)s')
+handler.setFormatter(formatter)
+logger.addHandler(handler)
+
+import sys
+import math
+import subprocess
+
+import rospy
+
+from visualization_msgs.msg import Marker
+from geometry_msgs.msg import Point, PoseStamped, Transform, Twist, Vector3
+from trajectory_msgs.msg import MultiDOFJointTrajectory, MultiDOFJointTrajectoryPoint
+
+FRAME = "paper_sheet"
+
+pub_traj = rospy.Publisher('write_traj', MultiDOFJointTrajectory)
+pub_markers = rospy.Publisher('visualization_marker', Marker)
+
+rospy.init_node("love_letters_sender")
+
+def a4_sheet():
+
+    w = 0.21
+    h = 0.297
+
+    sheet = Marker()
+    sheet.header.frame_id = FRAME
+    sheet.header.stamp = rospy.get_rostime()
+    sheet.ns = "robot_loves_letters"
+    sheet.action = Marker.ADD
+    sheet.pose.orientation.w = 1.0
+    sheet.pose.position.z = -.0005
+    sheet.pose.position.x = w/2
+    sheet.pose.position.y = h/2
+    sheet.id = 99
+    sheet.type = Marker.CUBE
+    sheet.scale.x = w
+    sheet.scale.y = h
+    sheet.scale.z = 0.0005
+    sheet.color.b = 1.0
+    sheet.color.g = 1.0
+    sheet.color.r = 1.0
+    sheet.color.a = 1.0
+
+    return sheet
+
+def visualize_traj(points):
+
+    traj = Marker()
+    traj.header.frame_id = FRAME
+    traj.header.stamp = rospy.get_rostime()
+    traj.ns = "love_letter"
+    traj.action = Marker.ADD
+    traj.pose.orientation.w = 1.0
+    traj.id = 0
+    traj.type = Marker.LINE_STRIP
+    traj.scale.x = 0.001 # line width
+    traj.color.r = 0.1
+    traj.color.r = 0.1
+    traj.color.b = 0.5
+    traj.color.a = 1.0
+    
+    traj.points = list(points)
+    
+    # use interactive marker from place_paper instead
+    #pub_markers.publish(a4_sheet()) 
+    pub_markers.publish(traj)
+
+def get_traj(svgfile):
+    logger.info("Running " + SVG_SAMPLER + "...")
+    if(SVG_SAMPLER=="svg2traj"):
+        p = subprocess.Popen([SVG_SAMPLER, svgfile], stdout=subprocess.PIPE, stderr = subprocess.PIPE)
+    elif(SVG_SAMPLER=="svg_subsampler"):    
+        p = subprocess.Popen([SVG_SAMPLER, svgfile, str(SAMPLE_DENSITY), SAMPLE_TYPE], stdout=subprocess.PIPE, stderr =    subprocess.PIPE)
+    
+    traj, errors = p.communicate()
+    logger.info(errors)
+
+    traj = traj.strip().split("\n")
+
+    # first line of the output of svg2traj is the x,y origin of the path in meters,
+    # relative to the SVG document origin
+    x_orig, y_orig = [float(x) for x in traj[0].split()]
+    for l in traj[1:]:
+        x, y, z = l.split()
+        if(SVG_SAMPLER=="svg2traj"):
+            x=x_orig + float(x);
+            y=y_orig + float(y);
+        elif(SVG_SAMPLER=="svg_subsampler"):
+            x=float(x);
+            y=float(y);
+
+        yield Vector3(x, y, 0) # stange values on Z! better set it to 0
+
+
+def make_joint_traj(points):
+    traj = MultiDOFJointTrajectory()
+    traj.header.frame_id = FRAME
+    traj.header.stamp = rospy.Time()
+    traj.joint_names = ["effector"]
+
+    for i, p in enumerate(points):
+
+        transforms = Transform(translation = p)
+        velocities = Twist()
+        accelerations = Twist() 
+        point = MultiDOFJointTrajectoryPoint([transforms], [velocities], [accelerations], rospy.Time(i*dt)) #assume constant time between points for now
+        traj.points.append(point)
+
+    return traj
+
+if __name__ == "__main__":
+
+
+    import argparse
+
+    parser = argparse.ArgumentParser(description='Publish a SVG trajectory as a ROS JointTrajectory')
+    parser.add_argument('file', action="store",
+                    help='an SVG file containing a single path')
+    parser.add_argument('--show', action='store_true', help='publish the trajectory as markers on /visualization_markers')
+    parser.add_argument('--nowrite', action='store_true', help='publish the trajectory as MultiDOFJointTrajectory on /write_traj')
+
+    args = parser.parse_args()
+    raw_traj = list(get_traj(args.file))
+    rate = rospy.Rate(.15) # continually publish since paper may be an interactive marker
+    while not rospy.is_shutdown():
+        if args.show:
+            #logger.info("Publishing the trajectory visualization...")
+            for i in range(2):
+                visualize_traj(raw_traj)
+        if not args.nowrite:
+            traj = make_joint_traj(raw_traj)
+            pub_traj.publish(traj)
+        rate.sleep()
