@@ -21,12 +21,11 @@ broadcast it.
 """
 #SVG_SAMPLER = "svg2traj"
 SVG_SAMPLER = "svg_subsampler"
-
+YFLIP = "yflip" #yflip or no-yflip
 # svg_subsampler parameters
-SAMPLE_DENSITY = 5 # points per cm
+SAMPLE_DENSITY = 8 # points per cm
 SAMPLE_TYPE = "homogeneous"
 #SAMPLE_TYPE = "curvature"
-PAPER_HEIGHT = 0.297 # metres (used for displaying svg_subsampler results)
 dt = 0.1; #seconds between points in traj
 
 import logging
@@ -109,7 +108,7 @@ def get_traj(svgfile):
     if(SVG_SAMPLER=="svg2traj"):
         p = subprocess.Popen([SVG_SAMPLER, svgfile], stdout=subprocess.PIPE, stderr = subprocess.PIPE)
     elif(SVG_SAMPLER=="svg_subsampler"):    
-        p = subprocess.Popen([SVG_SAMPLER, svgfile, str(SAMPLE_DENSITY), SAMPLE_TYPE], stdout=subprocess.PIPE, stderr =    subprocess.PIPE)
+        p = subprocess.Popen([SVG_SAMPLER, svgfile, str(SAMPLE_DENSITY), SAMPLE_TYPE, YFLIP], stdout=subprocess.PIPE, stderr =    subprocess.PIPE)
     
     traj, errors = p.communicate()
     logger.info(errors)

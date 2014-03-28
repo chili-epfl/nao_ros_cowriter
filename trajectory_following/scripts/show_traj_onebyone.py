@@ -58,9 +58,8 @@ def on_traj(requested_traj):
     rate = rospy.Rate(10) #add a new point to the animation at rate of 10Hz (temporary implementation)
     
     for trajp in requested_traj.points: #add points to the display one at a time
-	trajp_processed = trajp.transforms[0].translation;
-	trajp_processed.z = -0.001; #bring the writing "on top" of the paper (currently frame origin is a the top left of the paper, with +y as down and +x as across to the right).
-        written_points.append(trajp_processed)
+	p = trajp.transforms[0].translation;
+        written_points.append(p)
         visualize_traj(written_points)
         rate.sleep()
 
