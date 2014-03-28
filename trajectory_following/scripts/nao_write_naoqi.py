@@ -11,7 +11,7 @@ import robots;
 from robots.action import naoqi_request;
 from math import sqrt
 from geometry_msgs.msg import Transform, PoseStamped
-from trajectory_msgs.msg import MultiDOFJointTrajectory
+from nav_msgs.msg import Path
 import rospy
 import tf
 from copy import deepcopy
@@ -27,20 +27,20 @@ AXIS_MASK_WY = 16
 AXIS_MASK_WZ = 32
 
 nao = robots.Nao(ros=True, host='127.0.0.1'); #connect to webots simulator locally
-#nao.setpose("Stand");
-nao.execute([naoqi_request("motion","wbEnableEffectorControl",['LArm',False])])
+nao.setpose("Crouch");
+
+#nao.execute([naoqi_request("motion","wbEnableEffectorControl",['LArm',False])])
 
 tl = tf.TransformListener()
 #target=[0,0,0,'base_link']; pose = nao.poses[target];dtarget = nao.poses.ros.inframe(pose,"base_footprint");
-
 #nao.execute([naoqi_request("motion","wbSetEffectorControl",["LArm",[dtarget['x'],dtarget['y'],dtarget['z']]])])
 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",['LArm',False])])
 rospy.sleep(2)
 
-#pdb.set_trace();
-effector   = "LArm"
+
+effector   = "LArm" #LArm or RArm
 space      = 2#0torso#2motion.FRAME_ROBOT
-axisMask   = AXIS_MASK_X+AXIS_MASK_Y+AXIS_MASK_Z#+AXIS_MASK_WX+AXIS_MASK_WY+AXIS_MASK_WZ#control all the effector's axes 7 almath.AXIS_MASK_VEL    # just control position
+axisMask   = AXIS_MASK_X+AXIS_MASK_Y+AXIS_MASK_Z+AXIS_MASK_WX#+AXIS_MASK_WY+AXIS_MASK_WZ#control all the effector's axes 7 almath.AXIS_MASK_VEL    # just control position
 isAbsolute = True
 
 def on_traj(traj):
@@ -58,17 +58,14 @@ def on_traj(traj):
     #toto, quaternion = tl.lookupTransform(target_frame, ENDEFFECTOR, t)
     path = []; times = []; dt=0.1;
     if(first == True):
-        for trajp in traj.points:
-            '''
-            trajp.transforms[0].translation.x *= 0.5
-            trajp.transforms[0].translation.y *= 0.5
-            '''
-            trajp.transforms[0].translation.z = 0.05
+        for trajp in traj.poses:
+	    
+            trajp.pose.position.z = 0.05
             #trajp.transforms[0].rotation.w = sqrt(0.5)
             #trajp.transforms[0].rotation.x = -sqrt(0.5)
             
-            target.pose.position = deepcopy(trajp.transforms[0].translation)
-            target.pose.orientation = deepcopy(trajp.transforms[0].rotation)
+            target.pose.position = deepcopy(trajp.pose.position)
+            target.pose.orientation = deepcopy(trajp.pose.orientation)
             target_robot = tl.transformPose("base_footprint",target)
             #target = [p.transforms[0].translation.x, p.transforms[0].translation.y, p.transforms[0].translation.z, target_frame];
             #pose = nao.poses[target];
@@ -86,7 +83,7 @@ def on_traj(traj):
             #pdb.set_trace()
             #nao.execute([naoqi_request("motion","positionInterpolation",[effector,space,point,axisMask,[.1],isAbsolute])]);
 	    #pdb.set_trace();
-	    times.append(trajp.time_from_start.to_sec());
+	    times.append(trajp.header.stamp.to_sec());
 	    '''
             if(len(times)==0):
                 times.append(dt);
@@ -99,5 +96,5 @@ def on_traj(traj):
 
     first = False;
 
-pub_traj = rospy.Subscriber(TRAJ_TOPIC, MultiDOFJointTrajectory, on_traj)
+pub_traj = rospy.Subscriber(TRAJ_TOPIC, Path, on_traj)
 rospy.spin()

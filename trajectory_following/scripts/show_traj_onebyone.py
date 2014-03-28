@@ -20,7 +20,7 @@ logger.addHandler(handler)
 
 import rospy
 from visualization_msgs.msg import Marker
-from trajectory_msgs.msg import MultiDOFJointTrajectory
+from nav_msgs.msg import Path
 
 FRAME = "paper_sheet"
 
@@ -57,21 +57,21 @@ def on_traj(requested_traj):
     print("got traj")   
     
     #wait for robot to get to starting point
-    rospy.sleep(requested_traj.points[0].time_from_start); 
+    rospy.sleep(requested_traj.poses[0].header.stamp.to_sec()); 
 
     #add points to the display one at a time, like an animation
-    for i in range(len(requested_traj.points)-1): 
-	p = requested_traj.points[i].transforms[0].translation;
+    for i in range(len(requested_traj.poses)-1): 
+	p = requested_traj.poses[i].pose.position;
         written_points.append(p)
         visualize_traj(written_points)
-        duration = requested_traj.points[i+1].time_from_start - requested_traj.points[i].time_from_start;
+        duration = requested_traj.poses[i+1].header.stamp - requested_traj.poses[i].header.stamp;
         rospy.sleep(duration); #wait until it's time to show the next point
         
     #show final point (no sleep afterwards, but it does have a "lifetime" set in visualize_traj)    
-    p = requested_traj.points[len(requested_traj.points)-1].transforms[0].translation;
+    p = requested_traj.poses[len(requested_traj.poses)-1].pose.position;
     written_points.append(p)
     visualize_traj(written_points)
 
 #when we get a trajectory, start publishing the animation
-pub_traj = rospy.Subscriber('write_traj', MultiDOFJointTrajectory, on_traj)
+pub_traj = rospy.Subscriber('write_traj', Path, on_traj)
 rospy.spin()
