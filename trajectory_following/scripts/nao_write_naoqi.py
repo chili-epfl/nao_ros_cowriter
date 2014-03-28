@@ -85,12 +85,14 @@ def on_traj(traj):
             path.append(point);
             #pdb.set_trace()
             #nao.execute([naoqi_request("motion","positionInterpolation",[effector,space,point,axisMask,[.1],isAbsolute])]);
-
+	    #pdb.set_trace();
+	    times.append(trajp.time_from_start.to_sec());
+	    '''
             if(len(times)==0):
                 times.append(dt);
             else:            
                 times.append(dt+times[len(times)-1]);
-          
+	    '''
         #  
         #pdb.set_trace();
         nao.execute([naoqi_request("motion","positionInterpolation",[effector,space,path,axisMask,times,isAbsolute])]); 

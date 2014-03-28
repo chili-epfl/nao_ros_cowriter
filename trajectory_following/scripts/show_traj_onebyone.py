@@ -55,13 +55,22 @@ def visualize_traj(points):
 def on_traj(requested_traj):
     written_points = []
     print("got traj")   
-    rate = rospy.Rate(10) #add a new point to the animation at rate of 10Hz (temporary implementation)
     
-    for trajp in requested_traj.points: #add points to the display one at a time
-	p = trajp.transforms[0].translation;
+    #wait for robot to get to starting point
+    rospy.sleep(requested_traj.points[0].time_from_start); 
+
+    #add points to the display one at a time, like an animation
+    for i in range(len(requested_traj.points)-1): 
+	p = requested_traj.points[i].transforms[0].translation;
         written_points.append(p)
         visualize_traj(written_points)
-        rate.sleep()
+        duration = requested_traj.points[i+1].time_from_start - requested_traj.points[i].time_from_start;
+        rospy.sleep(duration); #wait until it's time to show the next point
+        
+    #show final point (no sleep afterwards, but it does have a "lifetime" set in visualize_traj)    
+    p = requested_traj.points[len(requested_traj.points)-1].transforms[0].translation;
+    written_points.append(p)
+    visualize_traj(written_points)
 
 #when we get a trajectory, start publishing the animation
 pub_traj = rospy.Subscriber('write_traj', MultiDOFJointTrajectory, on_traj)
