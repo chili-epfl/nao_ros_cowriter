@@ -27,7 +27,7 @@ SAMPLE_DENSITY = 8 # points per cm
 SAMPLE_TYPE = "homogeneous"
 #SAMPLE_TYPE = "curvature"
 dt = 0.1; #seconds between points in traj
-
+t0 = 0.5; #extra time for the robot to get to the first point in traj
 import logging
 logger = logging.getLogger("write." + __name__)
 logger.setLevel(logging.DEBUG)
@@ -141,7 +141,7 @@ def make_joint_traj(points):
         transforms = Transform(translation = p)
         velocities = Twist()
         accelerations = Twist() 
-        point = MultiDOFJointTrajectoryPoint([transforms], [velocities], [accelerations], rospy.Time(i*dt)) #assume constant time between points for now
+        point = MultiDOFJointTrajectoryPoint([transforms], [velocities], [accelerations], rospy.Time(t0+(i+1)*dt)) #assume constant time between points for now
         traj.points.append(point)
 
     return traj
@@ -159,7 +159,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     raw_traj = list(get_traj(args.file))
-    rate = rospy.Rate(.15) # continually publish since paper may be an interactive marker
+    rate = rospy.Rate(.1) # continually publish since paper may be an interactive marker
     while not rospy.is_shutdown():
         if args.show:
             #logger.info("Publishing the trajectory visualization...")
