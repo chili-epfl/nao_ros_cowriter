@@ -17,7 +17,6 @@ import tf
 from copy import deepcopy
 
 TRAJ_TOPIC = "/write_traj"
-END_EFFECTOR = "l_gripper"
 
 # masks for which axes naoqi is to control with its planning
 AXIS_MASK_X = 1
@@ -74,7 +73,13 @@ def on_traj(traj):
             #target = [p.transforms[0].translation.x, p.transforms[0].translation.y, p.transforms[0].translation.z, target_frame];
             #pose = nao.poses[target];
             #(roll, pitch, yaw) = tf.transformations.euler_from_quaternion([target_robot.pose.orientation.x, target_robot.pose.orientation.y, target_robot.pose.orientation.z, target_robot.pose.orientation.w])
-            point = [target_robot.pose.position.x,target_robot.pose.position.y,target_robot.pose.position.z,-1.7,0,0]#roll,pitch,yaw];
+            
+            if(effector == "LArm"):
+	      roll = -1.7; #rotate wrist to the left (about the x axis, w.r.t. robot frame)
+	    else:
+	      roll = 1.7; #rotate wrist to the right (about the x axis, w.r.t. robot frame)
+            
+            point = [target_robot.pose.position.x,target_robot.pose.position.y,target_robot.pose.position.z,roll,0,0]#roll,pitch,yaw];
             #dtarget = nao.poses.ros.inframe(pose,"base_footprint");
             #point = [0.1+0.5*trajp.transforms[0].translation.y,0.1+trajp.transforms[0].translation.x*0.5, 0.3,0,0,0];
             path.append(point);
