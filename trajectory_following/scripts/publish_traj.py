@@ -162,4 +162,5 @@ if __name__ == "__main__":
                 visualize_traj(raw_traj)
 	traj = make_traj_msg(raw_traj)
 	pub_traj.publish(traj)
-        rate.sleep()
+	print(rospy.Time.now());
+        rospy.sleep(traj.poses[-1].header.stamp.to_sec()+timeBetweenDisplays) #wait until have to display again
