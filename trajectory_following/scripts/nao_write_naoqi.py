@@ -8,6 +8,7 @@ Requires pyrobots and a running robot/simulation with ALNetwork proxies.
 
 import pdb;
 import robots;
+from naoqi import ALModule, ALBroker
 from robots.action import naoqi_request;
 from math import sqrt
 from geometry_msgs.msg import Transform, PoseStamped
@@ -26,10 +27,19 @@ AXIS_MASK_WX = 8
 AXIS_MASK_WY = 16
 AXIS_MASK_WZ = 32
 
-nao = robots.Nao(ros=True, host='127.0.0.1'); #connect to webots simulator locally
-nao.setpose("Crouch");
 
-#nao.execute([naoqi_request("motion","wbEnableEffectorControl",['LArm',False])])
+effector   = "RArm" #LArm or RArm
+#NAO_IP = '192.168.1.2';
+NAO_IP = '127.0.0.1';#connect to webots simulator locally
+
+
+nao = robots.Nao(ros=True, host=NAO_IP); 
+#nao.execute([naoqi_request("motion","setFallManagerEnabled",[True])]);
+nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,False])]) #if robot has fallen it will have a hard time getting up if the effector is still trying to be kept in a particular position
+nao.setpose("StandInit");
+nao.open_gripper(); #pyrobots only does right gripper. To-do: use motion.openHand("LHand");
+#pdb.set_trace();
+#nao.close_gripper();
 
 tl = tf.TransformListener()
 #target=[0,0,0,'base_link']; pose = nao.poses[target];dtarget = nao.poses.ros.inframe(pose,"base_footprint");
@@ -44,9 +54,13 @@ axisMask   = AXIS_MASK_X+AXIS_MASK_Y+AXIS_MASK_Z+AXIS_MASK_WX#+AXIS_MASK_WY+AXIS
 isAbsolute = True
 
 def on_traj(traj):
+    print("got traj at "+str(rospy.Time.now())) 
+    if(hasFallen == False): #no harm in executing trajectory
 
-    first = True
-
+    #wait until time instructed to start executing
+    rospy.sleep(traj.header.stamp-rospy.Time.now()-rospy.Duration(0.3));
+    print("executing traj at "+str(rospy.Time.now()))   
+    
     target = PoseStamped()
 
     target_frame = traj.header.frame_id
@@ -57,7 +71,7 @@ def on_traj(traj):
     #t = tl.getLatestCommonTime(ENDEFFECTOR, target_frame)
     #toto, quaternion = tl.lookupTransform(target_frame, ENDEFFECTOR, t)
     path = []; times = []; dt=0.1;
-    if(first == True):
+    
         for trajp in traj.poses:
 	    
             trajp.pose.position.z = 0.05
@@ -80,21 +94,43 @@ def on_traj(traj):
             #dtarget = nao.poses.ros.inframe(pose,"base_footprint");
             #point = [0.1+0.5*trajp.transforms[0].translation.y,0.1+trajp.transforms[0].translation.x*0.5, 0.3,0,0,0];
             path.append(point);
-            #pdb.set_trace()
-            #nao.execute([naoqi_request("motion","positionInterpolation",[effector,space,point,axisMask,[.1],isAbsolute])]);
-	    #pdb.set_trace();
 	    times.append(trajp.header.stamp.to_sec());
-	    '''
-            if(len(times)==0):
-                times.append(dt);
-            else:            
-                times.append(dt+times[len(times)-1]);
-	    '''
-        #  
-        #pdb.set_trace();
+	#pdb.set_trace();
+        startTime = rospy.Time.now();
         nao.execute([naoqi_request("motion","positionInterpolation",[effector,space,path,axisMask,times,isAbsolute])]); 
+        print("Time taken for whole trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
+    else:
+      print("Got traj but not allowed to execute it because I've fallen");
 
-    first = False;
+pdb.set_trace();
+class FallResponder(ALModule):
+  """ Module to react to robotHasFallen events """
+  
+  def __init__(self, name, robot):
+      ALModule.__init__(self, name)
+      self.robot = robot;
+      self.robot.execute([naoqi_request("memory","subscribeToEvent",["robotHasFallen",name,self.has_fallen.__name__])])
+      print("Subscribed");
+  def has_fallen(self, *_args):
+      global hasFallen
+      hasFallen = True;
+      #self.robot.execute([naoqi_request("motion","killTasksUsingResources",["RShoulderPitch"])]);
+      self.robot.execute([naoqi_request("motion","killAll",[])]);
+      print("Stopped task");
+      
 
+# We need this broker to be able to construct
+# NAOqi modules and subscribe to other modules
+# The broker must stay alive until the program exists
+pport = 9559;
+myBroker = ALBroker("myBroker", #I'm not sure that pyrobots doesn't already have one of these open called NAOqi?
+    "0.0.0.0",   # listen to anyone
+    0,           # find a free port and use it
+    NAO_IP,         # parent broker IP
+    pport)       # parent broker port
+hasFallen = False;
+fallResponder = FallResponder("fallResponder",nao);
 pub_traj = rospy.Subscriber(TRAJ_TOPIC, Path, on_traj)
 rospy.spin()
+myBroker.shutdown()
+#nao.execute([naoqi_request("motion","rest",[])]);
