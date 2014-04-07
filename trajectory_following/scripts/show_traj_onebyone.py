@@ -22,7 +22,7 @@ import rospy
 from visualization_msgs.msg import Marker
 from nav_msgs.msg import Path
 
-FRAME = "paper_sheet"
+FRAME = "writing_surface"
 
 pub_markers = rospy.Publisher('visualization_marker', Marker)
 

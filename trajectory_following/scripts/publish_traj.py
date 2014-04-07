@@ -47,7 +47,7 @@ from visualization_msgs.msg import Marker
 from geometry_msgs.msg import Point, PoseStamped, Transform, Twist, Vector3
 from nav_msgs.msg import Path
 
-FRAME = "paper_sheet"
+FRAME = "writing_surface"
 
 pub_traj = rospy.Publisher('write_traj', Path)
 pub_markers = rospy.Publisher('visualization_marker', Marker)

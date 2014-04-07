@@ -10,6 +10,8 @@ br = tf.TransformBroadcaster()
 
 from interactive_markers.interactive_marker_server import *
 
+FRAME = "writing_surface"
+
 server = None
 
 frame_pose = None
@@ -52,7 +54,7 @@ def make6DofMarker( fixed = False ):
     int_marker.pose.position.y =   0.035845387727
     int_marker.pose.position.z =   0.266128748655
 
-    int_marker.name = "paper_sheet"
+    int_marker.name = FRAME
     int_marker.description = "Place the sheet of paper"
 
     # create a grey box marker
@@ -164,6 +166,6 @@ if __name__=="__main__":
             br.sendTransform((p.x, p.y, p.z),
                             (o.x, o.y, o.z, o.w),
                             rospy.Time.now(),
-                            "paper_sheet",
+                            FRAME,
                             "map")
         rate.sleep()
