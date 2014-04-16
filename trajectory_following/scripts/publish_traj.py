@@ -22,11 +22,14 @@ broadcast it.
 SVG_SAMPLER = "svg_subsampler"
 YFLIP = "yflip" #yflip or no-yflip
 # svg_subsampler parameters
-SAMPLE_DENSITY = 8 # points per cm
+SAMPLE_DENSITY = 5 # points per cm
 SAMPLE_TYPE = "homogeneous"
 #SAMPLE_TYPE = "curvature"
-dt = 0.1; #seconds between points in traj
-t0 = 0.5; #extra time for the robot to get to the first point in traj
+dt = 0.3; #seconds between points in traj
+t0 = 3.5; #extra time for the robot to get to the first point in traj
+timeBetweenDisplays = 2.5; #seconds
+delayBeforeExecuting = 0.5; #seconds
+
 import logging
 logger = logging.getLogger("write." + __name__)
 logger.setLevel(logging.DEBUG)
@@ -52,7 +55,7 @@ FRAME = "writing_surface"
 pub_traj = rospy.Publisher('write_traj', Path)
 pub_markers = rospy.Publisher('visualization_marker', Marker)
 
-rospy.init_node("love_letters_sender")
+rospy.init_node("trajectory_publisher")
 
 def a4_sheet():
 
@@ -123,8 +126,8 @@ def get_traj(svgfile):
             x=x_orig + float(x);
             y=y_orig + float(y);
         elif(SVG_SAMPLER=="svg_subsampler"):
-            x=float(x)*0.4;
-            y=float(y)*0.4 + .05;
+            x=float(x)*0.23+0.025;
+            y=float(y)*0.23+ -0.01;
 
         yield Vector3(x, y, 0) # stange values on Z! better set it to 0
 
@@ -132,13 +135,13 @@ def get_traj(svgfile):
 def make_traj_msg(points):
     traj = Path()
     traj.header.frame_id = FRAME
-    traj.header.stamp = rospy.Time()
+    traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
     
     for i, p in enumerate(points):
         point = PoseStamped();
         point.pose.position = p;
         point.header.frame_id = FRAME;
-        point.header.stamp = rospy.Time(t0+(i+1)*dt); #assume constant time between points for now
+        point.header.stamp = rospy.Time(t0+i*dt); #assume constant time between points for now
         traj.poses.append(point)
     return traj
 
@@ -154,13 +157,14 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     raw_traj = list(get_traj(args.file))
-    rate = rospy.Rate(.1) # continually publish since paper may be an interactive marker
+    #rate = rospy.Rate(.1) # continually publish since paper may be an interactive marker
     while not rospy.is_shutdown():
         if args.show:
             #logger.info("Publishing the trajectory visualization...")
             for i in range(2):
                 visualize_traj(raw_traj)
-	traj = make_traj_msg(raw_traj)
-	pub_traj.publish(traj)
-	print(rospy.Time.now());
+        traj = make_traj_msg(raw_traj)
+        pub_traj.publish(traj)
+        print("sending traj at "+str(rospy.Time.now()))
+        print("to be executed at "+str(traj.header.stamp)) 
         rospy.sleep(traj.poses[-1].header.stamp.to_sec()+timeBetweenDisplays) #wait until have to display again

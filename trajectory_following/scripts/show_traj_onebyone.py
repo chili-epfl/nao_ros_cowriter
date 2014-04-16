@@ -26,7 +26,7 @@ FRAME = "writing_surface"
 
 pub_markers = rospy.Publisher('visualization_marker', Marker)
 
-rospy.init_node("love_letters_display")
+rospy.init_node("trajectory_visualiser")
 
 
 def visualize_traj(points):
@@ -54,14 +54,18 @@ def visualize_traj(points):
 
 def on_traj(requested_traj):
     written_points = []
-    print("got traj")   
+    print("got traj at "+str(rospy.Time.now()))   
     
+    #wait until time instructed to start executing
+    rospy.sleep(requested_traj.header.stamp-rospy.Time.now());
+    print("executing traj at "+str(rospy.Time.now())) 
+    startTime = rospy.Time.now();
     #wait for robot to get to starting point
     rospy.sleep(requested_traj.poses[0].header.stamp.to_sec()); 
 
     #add points to the display one at a time, like an animation
     for i in range(len(requested_traj.poses)-1): 
-	p = requested_traj.poses[i].pose.position;
+        p = requested_traj.poses[i].pose.position;
         written_points.append(p)
         visualize_traj(written_points)
         duration = requested_traj.poses[i+1].header.stamp - requested_traj.poses[i].header.stamp;
@@ -71,6 +75,7 @@ def on_traj(requested_traj):
     p = requested_traj.poses[len(requested_traj.poses)-1].pose.position;
     written_points.append(p)
     visualize_traj(written_points)
+    print("Time taken for whole trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
 
 #when we get a trajectory, start publishing the animation
 pub_traj = rospy.Subscriber('write_traj', Path, on_traj)
