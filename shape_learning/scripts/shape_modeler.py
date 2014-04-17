@@ -14,17 +14,21 @@ class ShapeModeler:
     #Read data from text file and store resulting data matrix
     #Text file should be formatted as:
     #numShapesInDataset \n numPointsInShapes \n 
-    #shape_1_x_1 shape_1_x_2 ... shape_1_x_numPointsInShapes shape_1_y_1 shape_1_y_2 ... shape_1_y_numPointsInShapes \n
-    #shape_2_x_1 shape_2_x_2 ... shape_2_x_numPointsInShapes shape_2_y_1 shape_2_y_2 ... shape_2_y_numPointsInShapes \n
+    #shape_1_x_1 shape_1_x_2 ... shape_1_x_numPointsInShapes shape_1_y_1
+    # shape_1_y_2 ... shape_1_y_numPointsInShapes \n
+    #shape_2_x_1 shape_2_x_2 ... shape_2_x_numPointsInShapes shape_2_y_1
+    # shape_2_y_2 ... shape_2_y_numPointsInShapes \n
     # ...
-    #shape_numShapesInDataset_x_1 shape_numShapesInDataset_x_2 ... shape_numShapesInDataset_x_numPointsInShapes 
-    #shape_numShapesInDataset_y_1 shape_numShapesInDataset_y_2 ... shape_numShapesInDataset_y_numPointsInShapes
+    #shape_numShapesInDataset_x_1 shape_numShapesInDataset_x_2 ...
+    # shape_numShapesInDataset_x_numPointsInShapes 
+    #shape_numShapesInDataset_y_1 shape_numShapesInDataset_y_2 ...
+    # shape_numShapesInDataset_y_numPointsInShapes
     def makeDataMatrix(self, filename):
         f = open(filename);
         self.numShapesInDataset = int(f.readline().strip());
         self.numPointsInShapes = int(f.readline().strip());
         if(not (self.numShapesInDataset and self.numPointsInShapes) ):
-            raise RuntimeError("Unable to read sizes needed from text file")
+            raise RuntimeError("Unable to read sizes needed from text file");
             
         
         self.dataMat = numpy.empty((self.numShapesInDataset, self.numPointsInShapes*2));
@@ -34,7 +38,8 @@ class ShapeModeler:
             if(not (len(values) == self.numPointsInShapes*2) ):
                 raise RuntimeError("Unable to read appropriate number of points from text file for shape "+str(i+1));  
                         
-            self.dataMat[i] = map(float,values);     
+            self.dataMat[i] = map(float,values); 
+        f.close();    
         
     #Calculate the top 'numPrincipleComponents' principle components of 
     #the dataset, the observed variance of each component, and the mean
@@ -76,19 +81,19 @@ class ShapeModeler:
     @staticmethod
     def showShape(shape):
         numPointsInShape = len(shape)/2;
-        x_shape = shape[0:numPointsInShape]
-        y_shape = shape[numPointsInShape:]
+        x_shape = shape[0:numPointsInShape];
+        y_shape = shape[numPointsInShape:];
 
         plt.plot(x_shape, -y_shape, c=numpy.random.rand(3,1))
-        plt.axis([-1,1,-1,1])
-        plt.draw()#show(block=False)   
-        
-    #Normalise shape so that max dimension is 1 and then show   
+        plt.axis([-1,1,-1,1]);
+        plt.draw();#show(block=False);
+    
+    #Normalise shape so that max dimension is 1 
     @staticmethod
-    def normaliseAndShowShape(shape):
+    def normaliseShape(shape):
         numPointsInShape = len(shape)/2;
-        x_shape = shape[0:numPointsInShape]
-        y_shape = shape[numPointsInShape:]
+        x_shape = shape[0:numPointsInShape];
+        y_shape = shape[numPointsInShape:];
         
         #normalise shape
         x_shape = x_shape-x_shape.mean();
@@ -99,4 +104,10 @@ class ShapeModeler:
         
         x_shape = x_shape/scale;
         y_shape = y_shape/scale;
+        return shape
+        
+    #Normalise shape so that max dimension is 1 and then show   
+    @staticmethod
+    def normaliseAndShowShape(shape):
+        shape = ShapeModeler.normaliseShape(shape);
         ShapeModeler.showShape(shape);

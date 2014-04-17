@@ -21,9 +21,10 @@ logger.addHandler(handler)
 import rospy
 from visualization_msgs.msg import Marker
 from nav_msgs.msg import Path
+from geometry_msgs.msg import Point
 
 FRAME = "writing_surface"
-
+SHAPE_CENTRE = Point(0.05,0.05,0) #where (with respect to FRAME origin) to show shape (metres)
 pub_markers = rospy.Publisher('visualization_marker', Marker)
 
 rospy.init_node("trajectory_visualiser")
@@ -66,6 +67,9 @@ def on_traj(requested_traj):
     #add points to the display one at a time, like an animation
     for i in range(len(requested_traj.poses)-1): 
         p = requested_traj.poses[i].pose.position;
+        p.x+= + SHAPE_CENTRE.x;
+        p.y+= + SHAPE_CENTRE.y;
+        p.z+= + SHAPE_CENTRE.z;
         written_points.append(p)
         visualize_traj(written_points)
         duration = requested_traj.poses[i+1].header.stamp - requested_traj.poses[i].header.stamp;
@@ -73,6 +77,9 @@ def on_traj(requested_traj):
         
     #show final point (no sleep afterwards, but it does have a "lifetime" set in visualize_traj)    
     p = requested_traj.poses[len(requested_traj.poses)-1].pose.position;
+    p.x+= + SHAPE_CENTRE.x;
+    p.y+= + SHAPE_CENTRE.y;
+    p.z+= + SHAPE_CENTRE.z;
     written_points.append(p)
     visualize_traj(written_points)
     print("Time taken for whole trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
