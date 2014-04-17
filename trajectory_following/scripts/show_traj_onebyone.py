@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+    #!/usr/bin/env python
 
 """
 Listens on 'write_traj' topic for a trajectory message, and publishes the corresponding 
@@ -24,11 +24,13 @@ from nav_msgs.msg import Path
 from geometry_msgs.msg import Point
 
 FRAME = "writing_surface"
-SHAPE_CENTRE = Point(0.05,0.05,0) #where (with respect to FRAME origin) to show shape (metres)
-pub_markers = rospy.Publisher('visualization_marker', Marker)
+WRITE_MULTIPLE_SHAPES = True;       #if True, modify the marker ID so as to not overwrite the previous shape
+SHAPE_CENTRE = Point(0.03,0.07,0)   #where (with respect to FRAME origin) to show (first) shape (metres)
+SHAPE_OFFSET = Point(0.05, 0, 0)    #offset (with respect to previous shape) of each shape (metres)
 
-rospy.init_node("trajectory_visualiser")
+pub_markers = rospy.Publisher('visualization_marker', Marker);
 
+rospy.init_node("trajectory_visualiser");
 
 def visualize_traj(points):
 
@@ -38,14 +40,17 @@ def visualize_traj(points):
     traj.ns = "love_letter"
     traj.action = Marker.ADD
     traj.pose.orientation.w = 1.0
-    traj.id = 0
     traj.type = Marker.LINE_STRIP
     traj.scale.x = 0.001 # line width
     traj.color.r = 0.1
-    traj.color.r = 0.1
     traj.color.b = 0.5
     traj.color.a = 1.0
-    traj.lifetime.secs = 1; #timeout for display
+    
+    if(WRITE_MULTIPLE_SHAPES):
+        traj.id = shapeCount;
+    else:
+        traj.id = 0; #overwrite any existing shapes
+        traj.lifetime.secs = 1; #timeout for display
     
     traj.points = list(points)
     
@@ -54,6 +59,7 @@ def visualize_traj(points):
     pub_markers.publish(traj)
 
 def on_traj(requested_traj):
+    global shapeCount #@todo find out how to pass this with callback..
     written_points = []
     print("got traj at "+str(rospy.Time.now()))   
     
@@ -67,9 +73,9 @@ def on_traj(requested_traj):
     #add points to the display one at a time, like an animation
     for i in range(len(requested_traj.poses)-1): 
         p = requested_traj.poses[i].pose.position;
-        p.x+= + SHAPE_CENTRE.x;
-        p.y+= + SHAPE_CENTRE.y;
-        p.z+= + SHAPE_CENTRE.z;
+        p.x+= + SHAPE_CENTRE.x + SHAPE_OFFSET.x*shapeCount;
+        p.y+= + SHAPE_CENTRE.y + SHAPE_OFFSET.y*shapeCount;
+        p.z+= + SHAPE_CENTRE.z + SHAPE_OFFSET.z*shapeCount;
         written_points.append(p)
         visualize_traj(written_points)
         duration = requested_traj.poses[i+1].header.stamp - requested_traj.poses[i].header.stamp;
@@ -77,13 +83,15 @@ def on_traj(requested_traj):
         
     #show final point (no sleep afterwards, but it does have a "lifetime" set in visualize_traj)    
     p = requested_traj.poses[len(requested_traj.poses)-1].pose.position;
-    p.x+= + SHAPE_CENTRE.x;
-    p.y+= + SHAPE_CENTRE.y;
-    p.z+= + SHAPE_CENTRE.z;
+    p.x+= + SHAPE_CENTRE.x + SHAPE_OFFSET.x*shapeCount;
+    p.y+= + SHAPE_CENTRE.y + SHAPE_OFFSET.y*shapeCount;
+    p.z+= + SHAPE_CENTRE.z + SHAPE_OFFSET.z*shapeCount;
     written_points.append(p)
     visualize_traj(written_points)
     print("Time taken for whole trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
+    shapeCount += 1;
 
+shapeCount = 0;
 #when we get a trajectory, start publishing the animation
 pub_traj = rospy.Subscriber('write_traj', Path, on_traj)
 rospy.spin()
