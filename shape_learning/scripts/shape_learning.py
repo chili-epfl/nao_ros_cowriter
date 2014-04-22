@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
 """
-Reads data from 'file' argument, publishes shapes on the 
-/shapes_to_draw topic and adapt them based on feedback received on the 
-/shape_feedback topic'
+Publishes shapes specified in 'word' argument on the /shapes_to_draw 
+topic and adapts them based on feedback received on the /shape_feedback 
+topic. Feedback messages should be formatted as shapeName_bestShapeIndex
+eg. 'a_2'.
 """
 
 
@@ -27,7 +28,7 @@ tol = 1e-2;                 #Tolerance on convergence test
 stdDevMultiples = [-6, 6];  #Starting bounds for paramToVary, as multiples of the parameter's observed standard deviation in the dataset
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
 doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
-
+#@todo: make groupwise comparison/pairwise comparison different implementations of shapeLearner class
 #trajectory publishing parameters
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
@@ -63,17 +64,20 @@ def make_traj_msg(shape):
 
 import bisect
 class ShapeLearner:
-    def __init__(self):
+    def __init__(self, shapeModeler, feedbackManagerEnabled, shape_learning):
+        self.shapeModeler = shapeModeler;
+        self.feedbackManagerEnabled = feedbackManagerEnabled; #if false, this shape subscribes to the feedback topic itself
         self.converged = False;
         self.numIters = 0;
         self.newParamValue = []; #this is just for the pair-wise one
+        self.shape_learning = shape_learning;
         
 ### ----------------------------------------------------- START LEARNING        
     def startLearning(self, startingBounds):
         self.bounds = startingBounds;
         
         #make initial shape
-        [shape, self.bestParamValue] = shapeModeler.makeRandomShapeFromUniform(paramToVary, self.bounds);
+        [shape, self.bestParamValue] = self.shapeModeler.makeRandomShapeFromUniform(paramToVary, self.bounds);
         shape = ShapeModeler.normaliseShape(shape);
         print('Bounds: '+str(self.bounds));
         print('Test param: '+str(self.bestParamValue));
@@ -87,22 +91,25 @@ class ShapeLearner:
             #pretend that first one wasn't good enough
             feedback = String();
             feedback.data = "no";
-            self.on_feedback(feedback); #call callback manually
+            if not self.feedbackManagerEnabled:
+                self.on_feedback(feedback); #call callback manually
             
         else:
             traj = make_traj_msg(shape);
             pub_traj.publish(traj);
-            feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, self.on_feedback);
-            rospy.spin();
+            if not self.feedbackManagerEnabled:
+                #manage callback ourselves
+                feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, self.on_feedback);
+                rospy.spin();
         
 ### ----------------------------------------------- MAKE DIFFERENT SHAPE        
     def makeShapeDifferentTo(self, paramValue):
         #make new shape to compare with
-        [newShape, newParamValue] = shapeModeler.makeRandomShapeFromTriangular(paramToVary, self.bounds, self.bestParamValue);
+        [newShape, newParamValue] = self.shapeModeler.makeRandomShapeFromTriangular(paramToVary, self.bounds, self.bestParamValue);
         #ensure it is significantly different
         numAttempts = 1;
         while(abs(newParamValue - paramValue) < diffThresh and numAttempts < maxNumAttempts):
-            [newShape, newParamValue] = shapeModeler.makeRandomShapeFromTriangular(paramToVary, self.bounds, self.bestParamValue);
+            [newShape, newParamValue] = self.shapeModeler.makeRandomShapeFromTriangular(paramToVary, self.bounds, self.bestParamValue);
             numAttempts+=1;      
         
         if(numAttempts>=maxNumAttempts): #couldn't find a 'different' shape in range
@@ -128,13 +135,14 @@ class ShapeLearner:
             if(doGroupwiseComparison):
                 errors = numpy.ndarray.tolist(abs(shapeToParamMapping-goalParamValue));
                 bestShape_idx = errors.index(min(errors));
-                feedback.data = 'shape'+str(bestShape_idx);
+                feedback.data = self.shape_learning + '_' + str(bestShape_idx);
             else:   
                 errors = [abs(self.bestParamValue- goalParamValue), abs(newParamValue- goalParamValue)];
                 names = ('old', 'new');
                 bestShape_idx = errors.index(min(errors));
                 feedback.data = names[bestShape_idx];
-            self.on_feedback(feedback);
+            if not self.feedbackManagerEnabled:
+                self.on_feedback(feedback);
         else:
             traj = make_traj_msg(shape);
             pub_traj.publish(traj);
@@ -142,7 +150,7 @@ class ShapeLearner:
 ### ------------------------------------------------ RESPOND TO FEEDBACK                
     def respondToFeedback(self, bestShape):
         if(doGroupwiseComparison):
-            bestShape = int(bestShape[5:]) #message is 'shape0' or 'shape1' etc
+            bestShape = int(bestShape)
             self.bestParamValue = self.shapeToParamMapping[bestShape];
             bestParamValue_index = bisect.bisect(self.params_sorted,self.bestParamValue) - 1; #indexing seems to start at 1 with bisect
             self.bounds = [self.params_sorted[bestParamValue_index-1],self.params_sorted[bestParamValue_index+1] ];
@@ -169,65 +177,109 @@ class ShapeLearner:
         #return self.bounds
         
 ### ----------------------------------------------------------- CALLBACK       
-    def on_feedback(self, feedback):        
-        
-        #------------------------------------------- respond to feedback
-        if(self.numIters == 0): #interpret feedback as whether or not the first shape is good enough
-            if(feedback.data == 'shape0'):
-                self.converged = True;
+    def on_feedback(self, feedbackMessage):        
+        feedback = feedbackMessage.data.split('_');
+        shape_messageFor = feedback[0];
+        if not shape_messageFor == self.shape_learning:
+            print('Ignoring message because it was for ' + shape_messageFor + 
+            ' not for this shape (' + self.shape_learning + ').');
         else:
-            bestShape = feedback.data;
-            
-            self.respondToFeedback(bestShape); #update bounds and bestParamValue
-            
-            #continue if there are more shapes to try which are different enough
-            if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
-                self.converged = True;
-        
-        #-------------------------------------------- continue iterating
-        self.numIters+=1;
-               
-        #try again if shape is not good enough
-        if(not self.converged):
-            [newShape, newParamValue] = self.makeShapeDifferentTo(self.bestParamValue);
-            self.newParamValue = newParamValue;
-            print('Bounds: '+str(self.bounds));
-            print('Test param: '+str(newParamValue));        
-            
-            #publish shape and get feedback
-            self.publishShapeAndWaitForFeedback(newShape,newParamValue);
+            feedbackData = feedback[1];
+            #------------------------------------------- respond to feedback
+            if(self.numIters == 0): #interpret feedback as whether or not the first shape is good enough
+                if(feedbackData == '0'):
+                    self.converged = True;
+            else:
+                bestShape = feedbackData;
                 
-        else:          
-            print('Converged');  
-            if(args.show):      
-                plt.show(block=True);
+                self.respondToFeedback(bestShape); #update bounds and bestParamValue
+                
+                #continue if there are more shapes to try which are different enough
+                if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
+                    self.converged = True;
+            
+            #-------------------------------------------- continue iterating
+            self.numIters+=1;
+                   
+            #try again if shape is not good enough
+            if(not self.converged):
+                [newShape, newParamValue] = self.makeShapeDifferentTo(self.bestParamValue);
+                self.newParamValue = newParamValue;
+                print('Bounds: '+str(self.bounds));
+                print('Test param: '+str(newParamValue));        
+                
+                #publish shape and get feedback
+                self.publishShapeAndWaitForFeedback(newShape,newParamValue);
+                    
+            else:          
+                print('Converged');  
+                if(args.show):      
+                    plt.show(block=True);
          
+###--------------------------------------------- WORD LEARNING FUNCTIONS
+# @todo make methods of a class
+def getDatasetFiles(charsToGet):
+    datasetFiles = [];
+    for char in charsToGet:
+        if char == 'd':
+            datasetFiles.append('../res/d_cursive_dataset.txt');
+        elif char == 's':
+            datasetFiles.append('../res/s_cursive_dataset.txt');
+        else:
+            raise RuntimeError("Dataset is not known for shape "+ char);
+    
+    return datasetFiles;
+    
+def initialiseShapeLearners(charsToLearn):
+    datasetFiles = getDatasetFiles(charsToLearn);  
+    shapeLearners = [];
+    
+    for i in range(len(charsToLearn)):
+        #analyse database of shapes
+        shapeModeler = ShapeModeler();
+        shapeModeler.makeDataMatrix(datasetFiles[i]);
+        shapeModeler.performPCA(numPrincipleComponents);
+
+        #learn parameter of shape
+        parameterVariances = shapeModeler.getParameterVariances();
+        bounds = numpy.array(stdDevMultiples)*parameterVariances[paramToVary-1];  
+        
+        shapeLearner = ShapeLearner(shapeModeler,True,charsToLearn[i]);
+        shapeLearner.startLearning(bounds);
+        shapeLearners.append(shapeLearner);
+        
+    return shapeLearners;
+    
+def feedbackManager(feedbackMessage):
+    feedback = feedbackMessage.data.split('_');
+    shape_messageFor = feedback[0];
+    try:
+        shapeIndex_messageFor = args.word.index(shape_messageFor);
+        shapeLearners[shapeIndex_messageFor].on_feedback(feedbackMessage);
+    except ValueError:
+        print('Skipping message because it is not for a known shape');
+        
+
 ### --------------------------------------------------------------- MAIN
         
 if __name__ == "__main__":
 
-    #parse parameters
+    #parse arguments
     import argparse
     parser = argparse.ArgumentParser(description='Publish shapes on the \
     /shapes_to_draw topic and adapt them based on feedback received on the /shape_feedback topic');
-    parser.add_argument('file', action="store",
-                    help='a .txt file containing a dataset of the shape');
+    parser.add_argument('word', action="store",
+                    help='a string containing the letters to be learnt');
     parser.add_argument('--show', action='store_true', help='display plots of the shapes');
 
     args = parser.parse_args();
     
-    #analyse database of shapes
-    shapeModeler = ShapeModeler();
-    shapeModeler.makeDataMatrix(args.file);
-    shapeModeler.performPCA(numPrincipleComponents);
-
-    #learn parameter of shape
-    parameterVariances = shapeModeler.getParameterVariances();
-    bounds = numpy.array(stdDevMultiples)*parameterVariances[paramToVary-1];
-    
     if(args.show):
         plt.ion(); #to plot one shape at a time
+    
+    #start learning
+    shapeLearners = initialiseShapeLearners(args.word); 
 
-    shapeLearner = ShapeLearner();
-    shapeLearner.startLearning(bounds);
-        
+    #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
+    feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
+    rospy.spin();
