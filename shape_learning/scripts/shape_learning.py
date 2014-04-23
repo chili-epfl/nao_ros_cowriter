@@ -38,12 +38,19 @@ dt = 0.1;                   #Seconds between points in traj
 delayBeforeExecuting = 0.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
 sizeScale = 0.06            #Desired max dimension of shape (metres)
 
+TOUCH_TOPIC = 'touch_info';
+
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 
 rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
+SHAPE_CENTRE = Point(0.03,0.07,0)   #where (with respect to FRAME origin) to show (first) shape (metres)
+SHAPE_OFFSET = Point(0.04, 0, 0)    #offset (with respect to previous shape) of each shape (metres)
+shapeCount = 0;
 def make_traj_msg(shape):
+    global shapeCount
+
     traj = Path();
     traj.header.frame_id = FRAME;
     traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
@@ -55,9 +62,16 @@ def make_traj_msg(shape):
         point = PoseStamped();
         point.pose.position.x = x_shape[i,0]*sizeScale;
         point.pose.position.y = -y_shape[i,0]*sizeScale;
+        
+        point.pose.position.x+= + SHAPE_CENTRE.x + SHAPE_OFFSET.x*shapeCount;
+        point.pose.position.y+= + SHAPE_CENTRE.y + SHAPE_OFFSET.y*shapeCount;
+        point.pose.position.z+= + SHAPE_CENTRE.z + SHAPE_OFFSET.z*shapeCount;
+        
         point.header.frame_id = FRAME;
         point.header.stamp = rospy.Time(t0+i*dt); #assume constant time between points for now
         traj.poses.append(point);
+    shapeCount += 1;
+
     return traj
     
 ###
