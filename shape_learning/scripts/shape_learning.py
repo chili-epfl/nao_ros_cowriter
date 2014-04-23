@@ -16,7 +16,7 @@ from shape_modeler import ShapeModeler
 
 import rospy
 from nav_msgs.msg import Path
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Point, PointStamped
 from std_msgs.msg import String
 
 #shape learning parameters
@@ -152,6 +152,7 @@ class ShapeLearner:
         if(doGroupwiseComparison):
             bestShape = int(bestShape)
             self.bestParamValue = self.shapeToParamMapping[bestShape];
+            print('Chosen param value: ' + str(self.bestParamValue));
             bestParamValue_index = bisect.bisect(self.params_sorted,self.bestParamValue) - 1; #indexing seems to start at 1 with bisect
             self.bounds = [self.params_sorted[bestParamValue_index-1],self.params_sorted[bestParamValue_index+1] ];
             #restrict bounds if they were caused by other shapes, because it must be sufficiently different to said shape(s)
@@ -186,17 +187,17 @@ class ShapeLearner:
         else:
             feedbackData = feedback[1];
             #------------------------------------------- respond to feedback
-            if(self.numIters == 0): #interpret feedback as whether or not the first shape is good enough
+            '''if(self.numIters == 0): #interpret feedback as whether or not the first shape is good enough
                 if(feedbackData == '0'):
                     self.converged = True;
-            else:
-                bestShape = feedbackData;
-                
-                self.respondToFeedback(bestShape); #update bounds and bestParamValue
-                
-                #continue if there are more shapes to try which are different enough
-                if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
-                    self.converged = True;
+            else:'''
+            bestShape = feedbackData;
+            
+            self.respondToFeedback(bestShape); #update bounds and bestParamValue
+            
+            #continue if there are more shapes to try which are different enough
+            if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
+                self.converged = True;
             
             #-------------------------------------------- continue iterating
             self.numIters+=1;
@@ -224,7 +225,7 @@ def getDatasetFiles(charsToGet):
         if char == 'd':
             datasetFiles.append('../res/d_cursive_dataset.txt');
         elif char == 's':
-            datasetFiles.append('../res/s_cursive_dataset.txt');
+            datasetFiles.append('../res/s_print_dataset.txt');
         else:
             raise RuntimeError("Dataset is not known for shape "+ char);
     
@@ -246,6 +247,7 @@ def initialiseShapeLearners(charsToLearn):
         
         shapeLearner = ShapeLearner(shapeModeler,True,charsToLearn[i]);
         shapeLearner.startLearning(bounds);
+        rospy.sleep(4.0);
         shapeLearners.append(shapeLearner);
         
     return shapeLearners;
@@ -259,7 +261,21 @@ def feedbackManager(feedbackMessage):
     except ValueError:
         print('Skipping message because it is not for a known shape');
         
-
+def touchInfoManager(pointStamped):
+    touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
+    shapeCentre = numpy.array([SHAPE_CENTRE.x, SHAPE_CENTRE.y]);
+    shapeOffset = numpy.array([SHAPE_OFFSET.x, SHAPE_OFFSET.y]);
+    #map touch location to closest shape drawn
+    shapeID = (touchLocation - shapeCentre)/shapeOffset;
+    shapeID = int(round(shapeID[0]));
+    shapeID = min(shapeID,shapeCount-1);
+    print('Shape touched: '+str(shapeID));
+    
+    
+    feedbackMessage = String();
+    feedbackMessage.data = args.word[0] + '_' + str(shapeID);
+    feedbackManager(feedbackMessage);
+    
 ### --------------------------------------------------------------- MAIN
         
 if __name__ == "__main__":
@@ -279,7 +295,10 @@ if __name__ == "__main__":
     
     #start learning
     shapeLearners = initialiseShapeLearners(args.word); 
-
+    
+    #listen for touch events on the tablet
+    touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
+    
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
     feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
     rospy.spin();
