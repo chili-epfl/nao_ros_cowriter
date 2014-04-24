@@ -95,7 +95,7 @@ def make_traj_msg(shape, shapeCentre):
     traj = Path();
     traj.header.frame_id = FRAME;
     traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
-
+    shape = ShapeModeler.normaliseShapeHeight(shape);
     numPointsInShape = len(shape)/2;   
     
     x_shape = shape[0:numPointsInShape];
@@ -139,7 +139,6 @@ class ShapeLearner:
         
         #make initial shape
         [shape, self.bestParamValue] = self.shapeModeler.makeRandomShapeFromUniform(paramToVary, self.bounds);
-        shape = ShapeModeler.normaliseShapeHeight(shape);
         print('Bounds: '+str(self.bounds));
         print('Test param: '+str(self.bestParamValue));
         if(doGroupwiseComparison):
@@ -177,8 +176,6 @@ class ShapeLearner:
         if(numAttempts>=maxNumAttempts): #couldn't find a 'different' shape in range
             print('Oh no!'); #this should be prevented by the convergence test below
         
-        mewShape = ShapeModeler.normaliseShapeHeight(newShape);
-
         #store it as an attempt
         if(doGroupwiseComparison):
             bisect.insort(self.params_sorted, newParamValue);
@@ -318,11 +315,11 @@ def initialiseShapeLearners(charsToLearn):
         shapeModeler = ShapeModeler();
         shapeModeler.makeDataMatrix(datasetFiles[i]);
         shapeModeler.performPCA(numPrincipleComponents);
-
+        
         #learn parameter of shape
         parameterVariances = shapeModeler.getParameterVariances();
         bounds = numpy.array(stdDevMultiples)*parameterVariances[paramToVary-1];  
-        
+
         shapeLearner = ShapeLearner(shapeModeler,True,charsToLearn[i]);
         shapeLearner.startLearning(bounds);
         rospy.sleep(10.0);
@@ -380,6 +377,9 @@ if __name__ == "__main__":
     
     #decide how the shapes should be placed
     shapesDrawn = numpy.ones((3,5,2))*numpy.NaN; #3rd dim: shapeType_code, ID
+    
+    #clear screen
+    pub_clear.publish(Empty());
     
     #start learning
     shapeLearners = initialiseShapeLearners(args.word); 
