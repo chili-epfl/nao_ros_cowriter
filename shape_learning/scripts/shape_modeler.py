@@ -95,10 +95,14 @@ class ShapeModeler:
         x_shape = shape[0:numPointsInShape];
         y_shape = shape[numPointsInShape:];
         
+        #shift so centre of shape is at (0,0)
+        x_range = max(x_shape)-min(x_shape);
+        y_range = max(y_shape)-min(y_shape);
+        x_shape = x_shape-(max(x_shape)-x_range/2);
+        y_shape = y_shape-(max(y_shape)-y_range/2);
+        
         #normalise shape
-        x_shape = x_shape-x_shape.mean();
-        y_shape = y_shape-y_shape.mean();
-        scale = max(max(x_shape)-min(x_shape),max(y_shape)-min(y_shape));
+        scale = max(x_range,y_range);
         if( scale<1e-10):
             print('Warning: shape is probably a bunch of points on top of each other...')
         
@@ -116,16 +120,20 @@ class ShapeModeler:
         x_shape = shape[0:numPointsInShape];
         y_shape = shape[numPointsInShape:];
         
+        #shift so centre of shape is at (0,0)
+        x_range = max(x_shape)-min(x_shape);
+        y_range = max(y_shape)-min(y_shape);
+        x_shape = x_shape-(max(x_shape)-x_range/2); 
+        y_shape = y_shape-(max(y_shape)-y_range/2);
+        
         #normalise shape
-        x_shape = x_shape-x_shape.mean();
-        y_shape = y_shape-y_shape.mean();
-        scale = (max(y_shape)-min(y_shape));
+        scale = y_range;
         if( scale<1e-10):
             print('Warning: shape is probably a bunch of points on top of each other...')
         
         x_shape = x_shape/scale;
         y_shape = y_shape/scale;
-        
+
         shape[0:numPointsInShape] = x_shape;
         shape[numPointsInShape:] = y_shape;
         return shape
@@ -135,3 +143,6 @@ class ShapeModeler:
     def normaliseAndShowShape(shape):
         shape = ShapeModeler.normaliseShape(shape);
         ShapeModeler.showShape(shape);
+            
+    def normaliseMeanShapeHeight(self):
+        self.meanShape = ShapeModeler.normaliseShapeHeight(self.meanShape);
