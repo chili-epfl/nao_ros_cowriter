@@ -103,7 +103,31 @@ class ShapeModeler:
             print('Warning: shape is probably a bunch of points on top of each other...')
         
         x_shape = x_shape/scale;
+        y_shape = y_shape/scale;        
+        
+        shape[0:numPointsInShape] = x_shape;
+        shape[numPointsInShape:] = y_shape;
+        return shape
+        
+    #Normalise shape so that height is 1 
+    @staticmethod
+    def normaliseShapeHeight(shape):
+        numPointsInShape = len(shape)/2;
+        x_shape = shape[0:numPointsInShape];
+        y_shape = shape[numPointsInShape:];
+        
+        #normalise shape
+        x_shape = x_shape-x_shape.mean();
+        y_shape = y_shape-y_shape.mean();
+        scale = (max(y_shape)-min(y_shape));
+        if( scale<1e-10):
+            print('Warning: shape is probably a bunch of points on top of each other...')
+        
+        x_shape = x_shape/scale;
         y_shape = y_shape/scale;
+        
+        shape[0:numPointsInShape] = x_shape;
+        shape[numPointsInShape:] = y_shape;
         return shape
         
     #Normalise shape so that max dimension is 1 and then show   

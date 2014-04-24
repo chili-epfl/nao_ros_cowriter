@@ -47,8 +47,8 @@ pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
-shapeWidth = 0.042;
-shapeHeight = 0.045;
+shapeWidth = 0.05;
+shapeHeight = 0.04;
 shapeSize = numpy.array([shapeWidth,shapeHeight]);
 
 
@@ -95,7 +95,7 @@ def make_traj_msg(shape, shapeCentre):
     traj = Path();
     traj.header.frame_id = FRAME;
     traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
-    
+
     numPointsInShape = len(shape)/2;   
     
     x_shape = shape[0:numPointsInShape];
@@ -106,7 +106,7 @@ def make_traj_msg(shape, shapeCentre):
     x_shape = downsample_1d(x_shape,downsampleFactor);
     y_shape = downsample_1d(y_shape,downsampleFactor);
     numPointsInShape = len(x_shape);
-    print(numPointsInShape);
+    
     for i in range(numPointsInShape):
         point = PoseStamped();
         point.pose.position.x = x_shape[i,0]*sizeScale;
@@ -139,7 +139,7 @@ class ShapeLearner:
         
         #make initial shape
         [shape, self.bestParamValue] = self.shapeModeler.makeRandomShapeFromUniform(paramToVary, self.bounds);
-        shape = ShapeModeler.normaliseShape(shape);
+        shape = ShapeModeler.normaliseShapeHeight(shape);
         print('Bounds: '+str(self.bounds));
         print('Test param: '+str(self.bestParamValue));
         if(doGroupwiseComparison):
@@ -177,6 +177,8 @@ class ShapeLearner:
         if(numAttempts>=maxNumAttempts): #couldn't find a 'different' shape in range
             print('Oh no!'); #this should be prevented by the convergence test below
         
+        mewShape = ShapeModeler.normaliseShapeHeight(newShape);
+
         #store it as an attempt
         if(doGroupwiseComparison):
             bisect.insort(self.params_sorted, newParamValue);
