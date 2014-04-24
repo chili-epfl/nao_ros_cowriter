@@ -29,14 +29,15 @@ stdDevMultiples = [-6, 6];  #Starting bounds for paramToVary, as multiples of th
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
 doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
 #@todo: make groupwise comparison/pairwise comparison different implementations of shapeLearner class
+
 #trajectory publishing parameters
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
 SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
-t0 = 0.5;                   #Time allowed for the first point in traj (seconds)
-dt = 0.1;                   #Seconds between points in traj
-delayBeforeExecuting = 0.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
-sizeScale = 0.06            #Desired max dimension of shape (metres)
+t0 = 1.5;                   #Time allowed for the first point in traj (seconds)
+dt = 0.07*5;                   #Seconds between points in traj
+delayBeforeExecuting = 1.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
+sizeScale = 0.042            #Desired max dimension of shape (metres)
 
 TOUCH_TOPIC = 'touch_info';
 
@@ -45,32 +46,49 @@ pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
-SHAPE_CENTRE = Point(0.03,0.07,0)   #where (with respect to FRAME origin) to show (first) shape (metres)
-SHAPE_OFFSET = Point(0.04, 0, 0)    #offset (with respect to previous shape) of each shape (metres)
-shapeCount = 0;
-def make_traj_msg(shape):
-    global shapeCount
+shapeWidth = 0.042;
+shapeHeight = 0.045;
+shapeSize = numpy.array([shapeWidth,shapeHeight]);
 
+shapeCount = 0;
+
+def getPositionToDrawAt(shapeType):
+    offset = args.word.index(shapeType);
+    col = 1 + offset;
+    
+    shapeType_code = args.word.index(shapeType);
+    shapeID = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+    row = shapeID;
+    shapesDrawn[row,col,0] = shapeType_code;
+    shapesDrawn[row,col,1] = shapeID;
+    
+    numRows = shapesDrawn.shape[0];
+    position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
+    return position;
+    
+def make_traj_msg(shape, shapeCentre):      
+    
     traj = Path();
     traj.header.frame_id = FRAME;
     traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
     
-    numPointsInShape = len(shape)/2;
+    numPointsInShape = len(shape)/2;   
+    
     x_shape = shape[0:numPointsInShape];
     y_shape = shape[numPointsInShape:];
+    
+    
     for i in range(numPointsInShape):
         point = PoseStamped();
         point.pose.position.x = x_shape[i,0]*sizeScale;
         point.pose.position.y = -y_shape[i,0]*sizeScale;
         
-        point.pose.position.x+= + SHAPE_CENTRE.x + SHAPE_OFFSET.x*shapeCount;
-        point.pose.position.y+= + SHAPE_CENTRE.y + SHAPE_OFFSET.y*shapeCount;
-        point.pose.position.z+= + SHAPE_CENTRE.z + SHAPE_OFFSET.z*shapeCount;
+        point.pose.position.x+= + shapeCentre[0];
+        point.pose.position.y+= + shapeCentre[1];
         
         point.header.frame_id = FRAME;
-        point.header.stamp = rospy.Time(t0+i*dt); #assume constant time between points for now
+        point.header.stamp = rospy.Time(t0+i*dt); #@todo allow for variable time between points for now
         traj.poses.append(point);
-    shapeCount += 1;
 
     return traj
     
@@ -109,7 +127,8 @@ class ShapeLearner:
                 self.on_feedback(feedback); #call callback manually
             
         else:
-            traj = make_traj_msg(shape);
+            shapeCentre = getPositionToDrawAt(self.shape_learning);
+            traj = make_traj_msg(shape, shapeCentre);
             pub_traj.publish(traj);
             if not self.feedbackManagerEnabled:
                 #manage callback ourselves
@@ -158,7 +177,8 @@ class ShapeLearner:
             if not self.feedbackManagerEnabled:
                 self.on_feedback(feedback);
         else:
-            traj = make_traj_msg(shape);
+            shapeCentre = getPositionToDrawAt(self.shape_learning);
+            traj = make_traj_msg(shape, shapeCentre);
             pub_traj.publish(traj);
             
 ### ------------------------------------------------ RESPOND TO FEEDBACK                
@@ -206,38 +226,51 @@ class ShapeLearner:
                     self.converged = True;
             else:'''
             bestShape = feedbackData;
-            
-            self.respondToFeedback(bestShape); #update bounds and bestParamValue
-            
-            #continue if there are more shapes to try which are different enough
-            if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
-                self.converged = True;
-            
-            #-------------------------------------------- continue iterating
-            self.numIters+=1;
-                   
-            #try again if shape is not good enough
-            if(not self.converged):
-                [newShape, newParamValue] = self.makeShapeDifferentTo(self.bestParamValue);
-                self.newParamValue = newParamValue;
-                print('Bounds: '+str(self.bounds));
-                print('Test param: '+str(newParamValue));        
+            try: 
+                self.respondToFeedback(bestShape); #update bounds and bestParamValue
                 
-                #publish shape and get feedback
-                self.publishShapeAndWaitForFeedback(newShape,newParamValue);
+                #continue if there are more shapes to try which are different enough
+                if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
+                    self.converged = True;
+                
+                #-------------------------------------------- continue iterating
+                self.numIters+=1;
+                       
+                #try again if shape is not good enough
+                if(not self.converged):
+                    [newShape, newParamValue] = self.makeShapeDifferentTo(self.bestParamValue);
+                    self.newParamValue = newParamValue;
+                    print('Bounds: '+str(self.bounds));
+                    print('Test param: '+str(newParamValue));        
                     
-            else:          
-                print('Converged');  
-                if(args.show):      
-                    plt.show(block=True);
+                    #publish shape and get feedback
+                    self.publishShapeAndWaitForFeedback(newShape,newParamValue);
+                        
+                else:          
+                    print('Converged');  
+                    if(args.show):      
+                        plt.show(block=True);
+            
+            except IndexError:
+                print('Ignoring message because it is not for a known shape ID');
+                #keep waiting for new feedback
          
 ###--------------------------------------------- WORD LEARNING FUNCTIONS
 # @todo make methods of a class
+# @todo set the parameter to vary, too
 def getDatasetFiles(charsToGet):
     datasetFiles = [];
     for char in charsToGet:
         if char == 'd':
             datasetFiles.append('../res/d_cursive_dataset.txt');
+        elif char == 'e':
+            datasetFiles.append('../res/e_dataset.txt');
+        elif char == 'm':
+            datasetFiles.append('../res/m_dataset.txt');
+        elif char == 'n':
+            datasetFiles.append('../res/n_dataset.txt');
+        elif char == 'o':
+            datasetFiles.append('../res/o_dataset.txt');
         elif char == 's':
             datasetFiles.append('../res/s_print_dataset.txt');
         else:
@@ -277,19 +310,24 @@ def feedbackManager(feedbackMessage):
         
 def touchInfoManager(pointStamped):
     touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
-    shapeCentre = numpy.array([SHAPE_CENTRE.x, SHAPE_CENTRE.y]);
-    shapeOffset = numpy.array([SHAPE_OFFSET.x, SHAPE_OFFSET.y]);
+
     #map touch location to closest shape drawn
-    shapeID = (touchLocation - shapeCentre)/shapeOffset;
-    shapeID = int(round(shapeID[0]));
-    shapeID = min(shapeID,shapeCount-1);
-    print('Shape touched: '+str(shapeID));
-    
-    
-    feedbackMessage = String();
-    feedbackMessage.data = args.word[0] + '_' + str(shapeID);
-    feedbackManager(feedbackMessage);
-    
+    touchCell = (touchLocation - shapeSize/2)/shapeSize;
+    numRows = shapesDrawn.shape[0];
+    row = (numRows -1)- int(round(touchCell[1]));
+    col = int(round(touchCell[0]));
+    shapeType_code = shapesDrawn[row,col,0];
+    try:
+        shapeID = int(shapesDrawn[row,col,1]);
+        shapeType = args.word[int(shapeType_code)];
+        print('Shape touched: '+shapeType+str(shapeID))
+        feedbackMessage = String();
+        feedbackMessage.data = shapeType + '_' + str(shapeID);
+        feedbackManager(feedbackMessage);
+    except ValueError: #@todo map to closest shape if necessary
+        print('Ignoring touch because it wasn''t on a valid shape');
+        
+
 ### --------------------------------------------------------------- MAIN
         
 if __name__ == "__main__":
@@ -306,6 +344,11 @@ if __name__ == "__main__":
     
     if(args.show):
         plt.ion(); #to plot one shape at a time
+    
+    rospy.sleep(1.0); #maybe this helps the tablet not miss the first one?
+    
+    #decide how the shapes should be placed
+    shapesDrawn = numpy.ones((3,5,2))*numpy.NaN; #3rd dim: shapeType_code, ID
     
     #start learning
     shapeLearners = initialiseShapeLearners(args.word); 
