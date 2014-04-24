@@ -9,6 +9,7 @@ eg. 'a_2'.
 
 
 import numpy
+import math
 import pdb
 import matplotlib.pyplot as plt
 import time
@@ -38,7 +39,7 @@ t0 = 1.5;                   #Time allowed for the first point in traj (seconds)
 dt = 0.07*5;                   #Seconds between points in traj
 delayBeforeExecuting = 1.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
 sizeScale = 0.042            #Desired max dimension of shape (metres)
-
+numDesiredShapePoints = 15.0; #Number of points to downsample the length of shapes to (not guaranteed)
 TOUCH_TOPIC = 'touch_info';
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
@@ -50,7 +51,7 @@ shapeWidth = 0.042;
 shapeHeight = 0.045;
 shapeSize = numpy.array([shapeWidth,shapeHeight]);
 
-shapeCount = 0;
+
 
 def getPositionToDrawAt(shapeType):
     offset = args.word.index(shapeType);
@@ -66,6 +67,29 @@ def getPositionToDrawAt(shapeType):
     position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
     return position;
     
+from numpy import mean;
+def downsample_1d(myarr,factor,estimator=mean):
+    """
+    FROM http://code.google.com/p/agpy/source/browse/trunk/AG_image_tools/downsample.py?r=452
+    Downsample a 1D array by averaging over *factor* pixels.
+    Crops right side if the shape is not a multiple of factor.
+
+    This code is pure numpy and should be fast.
+
+    keywords:
+        estimator - default to mean.  You can downsample by summing or
+            something else if you want a different estimator
+            (e.g., downsampling error: you want to sum & divide by sqrt(n))
+    """
+    #xs = myarr.shape
+    xs = len(myarr);
+    factor = int(factor);
+    crarr = myarr[:xs-(xs % factor)]
+    dsarr = estimator( numpy.concatenate([[crarr[i::factor]
+        for i in range(factor)] ]),axis=0)
+    return dsarr
+    
+    
 def make_traj_msg(shape, shapeCentre):      
     
     traj = Path();
@@ -77,7 +101,12 @@ def make_traj_msg(shape, shapeCentre):
     x_shape = shape[0:numPointsInShape];
     y_shape = shape[numPointsInShape:];
     
-    
+    #downsample shape
+    downsampleFactor = math.ceil(numPointsInShape/numDesiredShapePoints);#determine appropriate factor for downsampling
+    x_shape = downsample_1d(x_shape,downsampleFactor);
+    y_shape = downsample_1d(y_shape,downsampleFactor);
+    numPointsInShape = len(x_shape);
+    print(numPointsInShape);
     for i in range(numPointsInShape):
         point = PoseStamped();
         point.pose.position.x = x_shape[i,0]*sizeScale;
@@ -294,7 +323,7 @@ def initialiseShapeLearners(charsToLearn):
         
         shapeLearner = ShapeLearner(shapeModeler,True,charsToLearn[i]);
         shapeLearner.startLearning(bounds);
-        rospy.sleep(4.0);
+        rospy.sleep(10.0);
         shapeLearners.append(shapeLearner);
         
     return shapeLearners;
