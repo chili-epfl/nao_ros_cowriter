@@ -18,10 +18,10 @@ from shape_modeler import ShapeModeler
 import rospy
 from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped, Point, PointStamped
-from std_msgs.msg import String
+from std_msgs.msg import String, Empty
 
 #shape learning parameters
-paramToVary = 4;            #Natural number between 1 and numPrincipleComponents, representing which principle component to vary from the template
+paramToVary = 2;            #Natural number between 1 and numPrincipleComponents, representing which principle component to vary from the template
 numPrincipleComponents = 5; #Number of principle components to keep during PCA of dataset
 maxNumAttempts = 1000;      #Allowed attempts to draw a new shape which is significantly different to the previous one but still within the range (just a precaution; sampling should be theoretically possible)
 diffThresh = 0.2;           #How different two shapes' parameters need to be to be published for comparison
@@ -38,17 +38,18 @@ SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
 t0 = 1.5;                   #Time allowed for the first point in traj (seconds)
 dt = 0.07*5;                   #Seconds between points in traj
 delayBeforeExecuting = 1.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
-sizeScale = 0.042            #Desired max dimension of shape (metres)
+sizeScale = 0.040;            #Desired max dimension of shape (metres)
 numDesiredShapePoints = 15.0; #Number of points to downsample the length of shapes to (not guaranteed)
 TOUCH_TOPIC = 'touch_info';
-
+CLEAR_SCREEN_TOPIC = 'clear_screen';
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
+pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
 
 rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
 shapeWidth = 0.05;
-shapeHeight = 0.04;
+shapeHeight = 0.044;
 shapeSize = numpy.array([shapeWidth,shapeHeight]);
 
 
@@ -254,34 +255,31 @@ class ShapeLearner:
                     self.converged = True;
             else:'''
             bestShape = feedbackData;
-            try: 
-                self.respondToFeedback(bestShape); #update bounds and bestParamValue
-                
-                #continue if there are more shapes to try which are different enough
-                if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
-                    self.converged = True;
-                
-                #-------------------------------------------- continue iterating
-                self.numIters+=1;
-                       
-                #try again if shape is not good enough
-                if(not self.converged):
-                    [newShape, newParamValue] = self.makeShapeDifferentTo(self.bestParamValue);
-                    self.newParamValue = newParamValue;
-                    print('Bounds: '+str(self.bounds));
-                    print('Test param: '+str(newParamValue));        
-                    
-                    #publish shape and get feedback
-                    self.publishShapeAndWaitForFeedback(newShape,newParamValue);
-                        
-                else:          
-                    print('Converged');  
-                    if(args.show):      
-                        plt.show(block=True);
+         
+            self.respondToFeedback(bestShape); #update bounds and bestParamValue
             
-            except IndexError:
-                print('Ignoring message because it is not for a known shape ID');
-                #keep waiting for new feedback
+            #continue if there are more shapes to try which are different enough
+            if((abs(self.bounds[1]-self.bestParamValue)-diffThresh < tol) and (abs(self.bestParamValue-self.bounds[0])-diffThresh) < tol):
+                self.converged = True;
+            
+            #-------------------------------------------- continue iterating
+            self.numIters+=1;
+                   
+            #try again if shape is not good enough
+            if(not self.converged):
+                [newShape, newParamValue] = self.makeShapeDifferentTo(self.bestParamValue);
+                self.newParamValue = newParamValue;
+                print('Bounds: '+str(self.bounds));
+                print('Test param: '+str(newParamValue));        
+                
+                #publish shape and get feedback
+                self.publishShapeAndWaitForFeedback(newShape,newParamValue);
+                    
+            else:          
+                print('Converged');  
+                if(args.show):      
+                    plt.show(block=True);
+            
          
 ###--------------------------------------------- WORD LEARNING FUNCTIONS
 # @todo make methods of a class
@@ -289,7 +287,9 @@ class ShapeLearner:
 def getDatasetFiles(charsToGet):
     datasetFiles = [];
     for char in charsToGet:
-        if char == 'd':
+        if char == 'c':
+            datasetFiles.append('../res/c_dataset.txt');
+        elif char == 'd':
             datasetFiles.append('../res/d_cursive_dataset.txt');
         elif char == 'e':
             datasetFiles.append('../res/e_dataset.txt');
@@ -301,6 +301,10 @@ def getDatasetFiles(charsToGet):
             datasetFiles.append('../res/o_dataset.txt');
         elif char == 's':
             datasetFiles.append('../res/s_print_dataset.txt');
+        elif char == 'u':
+            datasetFiles.append('../res/u_dataset.txt');
+        elif char == 'w':
+            datasetFiles.append('../res/w_dataset.txt');
         else:
             raise RuntimeError("Dataset is not known for shape "+ char);
     
@@ -344,16 +348,28 @@ def touchInfoManager(pointStamped):
     numRows = shapesDrawn.shape[0];
     row = (numRows -1)- int(round(touchCell[1]));
     col = int(round(touchCell[0]));
-    shapeType_code = shapesDrawn[row,col,0];
+    
     try:
-        shapeID = int(shapesDrawn[row,col,1]);
+        shapeType_code = shapesDrawn[row,col,0];
         shapeType = args.word[int(shapeType_code)];
-        print('Shape touched: '+shapeType+str(shapeID))
-        feedbackMessage = String();
-        feedbackMessage.data = shapeType + '_' + str(shapeID);
-        feedbackManager(feedbackMessage);
-    except ValueError: #@todo map to closest shape if necessary
+        numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+        shapeID = int(shapesDrawn[row,col,1]);
+        
+        if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
+            print('Ignoring touch because it wasn''t on a valid shape');
+
+        elif(shapeID==(numRows-1)):#last shape selected but no more space
+            print('Can''t fit anymore letters on the screen');
+        else:
+            print('Shape touched: '+shapeType+str(shapeID))
+            feedbackMessage = String();
+            feedbackMessage.data = shapeType + '_' + str(shapeID);
+            feedbackManager(feedbackMessage);
+    except ValueError:    #@todo map to closest shape if appropriate
         print('Ignoring touch because it wasn''t on a valid shape');
+        
+    
+   
         
 
 ### --------------------------------------------------------------- MAIN
@@ -380,13 +396,13 @@ if __name__ == "__main__":
     
     #clear screen
     pub_clear.publish(Empty());
-    
+
     #start learning
     shapeLearners = initialiseShapeLearners(args.word); 
-    
+        
     #listen for touch events on the tablet
     touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
-    
+        
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
     feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
     rospy.spin();
