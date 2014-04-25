@@ -24,6 +24,7 @@ from std_msgs.msg import String, Empty
 #shape learning parameters
 numPrincipleComponents = 5; #Number of principle components to keep during PCA of dataset
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
+boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again
 
 #trajectory publishing parameters
 FRAME = 'writing_surface';  #Frame ID to publish points in
@@ -47,10 +48,11 @@ shapeWidth = 0.05;
 shapeHeight = 0.044;
 shapeSize = numpy.array([shapeWidth,shapeHeight]);
 def getPositionToDrawAt(shapeType):
-    offset = wordToLearn.index(shapeType);
+    global currentWord
+    offset = currentWord.index(shapeType);
     col = 1 + offset;
     
-    shapeType_code = wordToLearn.index(shapeType);
+    shapeType_code = currentWord.index(shapeType);
     shapeID = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
     row = shapeID;
     shapesDrawn[row,col,0] = shapeType_code;
@@ -149,35 +151,54 @@ def generateSettings(shapeType):
     paramToVary = 2, doGroupwiseComparison = True, initialBounds = [], minParamDiff = 0.2);
     return settings, datasetFile, initialBounds_stdDevMultiples
     
-def initialiseShapeLearners(charsToLearn):
-    shapeLearners = [];
-    settings_shapeLearners = [];
-    for i in range(len(charsToLearn)):
-        shapeType = charsToLearn[i];
-        [settings, datasetFile, initialBounds_stdDevMultiples] = generateSettings(shapeType); 
+def initialiseShapeLearners(wordToLearn):
+    global shapesLearnt, shapeLearners, settings_shapeLearners
+    for i in range(len(wordToLearn)):
+        shapeType = wordToLearn[i];
+        
+        #check if shape has been learnt before
+        try:
+            shapeType_index = shapesLearnt.index(shapeType);
+            newShape = False;
+        except ValueError: 
+            newShape = True;
+        
+        if(newShape):
+            [settings, datasetFile, initialBounds_stdDevMultiples] = generateSettings(shapeType); 
 
-        #analyse database of shapes
-        shapeModeler = ShapeModeler();
-        shapeModeler.makeDataMatrix(datasetFile);
-        shapeModeler.performPCA(numPrincipleComponents);
-        
-        #learn parameter of shape
-        parameterVariances = shapeModeler.getParameterVariances();
-        settings.initialBounds = numpy.array(initialBounds_stdDevMultiples)*parameterVariances[settings.paramToVary-1];  
-        
-        shapeLearner = ShapeLearner(shapeModeler,settings);
-        shapeLearners.append(shapeLearner);
-        settings_shapeLearners.append(settings);
+            #analyse database of shapes
+            shapeModeler = ShapeModeler();
+            shapeModeler.makeDataMatrix(datasetFile);
+            shapeModeler.performPCA(numPrincipleComponents);
+            
+            #learn parameter of shape
+            parameterVariances = shapeModeler.getParameterVariances();
+            settings.initialBounds = numpy.array(initialBounds_stdDevMultiples)*parameterVariances[settings.paramToVary-1];  
+            
+            shapeLearner = ShapeLearner(shapeModeler,settings);
+            shapesLearnt.append(shapeType);
+            shapeLearners.append(shapeLearner);
+            settings_shapeLearners.append(settings);
+        else:
+            #use the bounds determined last time
+            previousBounds = shapeLearners[shapeType_index].getParameterBounds();
+            newInitialBounds = previousBounds;
+            newInitialBounds[0] -= boundExpandingAmount;
+            newInitialBounds[1] += boundExpandingAmount;
+            settings_shapeLearners[shapeType_index].initialBounds = newInitialBounds;
     return shapeLearners, settings_shapeLearners;
 
-def startShapeLearners(shapeLearners,settings_shapeLearners):
+def startShapeLearners(wordToLearn):
+    global shapesLearnt, shapeLearners, settings_shapeLearners
+
     #start learning        
-    for i in range(len(shapeLearners)):
-        [shape, paramValue] = shapeLearners[i].startLearning(settings_shapeLearners[i].initialBounds);
+    for i in range(len(wordToLearn)):
         shapeType = wordToLearn[i];
+        shape_index = shapesLearnt.index(shapeType);
+        [shape, paramValue] = shapeLearners[shape_index].startLearning(settings_shapeLearners[shape_index].initialBounds);
         publishShapeAndWaitForFeedback(shape,shapeType);
         if(simulatedFeedback): #pretend first one isn't good enough
-            publishSimulatedFeedback(0,shapeType,settings_shapeLearners[i].doGroupwiseComparison); 
+            publishSimulatedFeedback(0,shapeType,settings_shapeLearners[shape_index].doGroupwiseComparison); 
 
         else:
             rospy.sleep(10.0);
@@ -211,7 +232,7 @@ def feedbackManager(feedbackMessage):
     feedbackData = feedback[1];
     bestShape_index = int(feedbackData);
     try:
-        shapeIndex_messageFor = wordToLearn.index(shape_messageFor);
+        shapeIndex_messageFor = shapesLearnt.index(shape_messageFor);
         [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
         
         if(not converged):
@@ -235,14 +256,14 @@ def touchInfoManager(pointStamped):
     
     try:
         shapeType_code = shapesDrawn[row,col,0];
-        shapeType = wordToLearn[int(shapeType_code)];
+        shapeType = currentWord[int(shapeType_code)];
         numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
         shapeID = int(shapesDrawn[row,col,1]);
         
         if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
             print('Ignoring touch because it wasn''t on a valid shape');
 
-        elif(shapeID==(numRows-1)):#last shape selected but no more space
+        elif(numShapes_shapeType==numRows):#last shape selected but no more space
             print('Can''t fit anymore letters on the screen');
         else:
             print('Shape touched: '+shapeType+str(shapeID))
@@ -255,18 +276,27 @@ def touchInfoManager(pointStamped):
     
    
 def wordMessageManager(message):
-    global shapeLearners, settings_shapeLearners, wordToLearn #@todo make class attributes
-
+    global shapeLearners, settings_shapeLearners, shapesDrawn, currentWord #@todo make class attributes
+    
     wordToLearn = message.data;
+    currentWord = wordToLearn;
+        
+    #clear screen
+    pub_clear.publish(Empty());
+
+    #initialise shapes on screen
+    shapesDrawn = numpy.ones((3,5,2))*numpy.NaN; #3rd dim: shapeType_code, ID
     
     [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(wordToLearn); 
-    startShapeLearners(shapeLearners,settings_shapeLearners);
-
+    startShapeLearners(wordToLearn);
         
 
 ### --------------------------------------------------------------- MAIN
-wordToLearn = [];
+shapesLearnt = [];
 shapeLearners = [];
+currentWord = [];
+settings_shapeLearners = [];
+shapesDrawn = [];
 if __name__ == "__main__":
     #parse arguments
     import argparse
@@ -277,19 +307,11 @@ if __name__ == "__main__":
     parser.add_argument('--show', action='store_true', help='display plots of the shapes');
 
     args = parser.parse_args();
-
-    wordToLearn = args.word;
         
     if(args.show):
         plt.ion(); #to plot one shape at a time
     
     rospy.sleep(1.0); #maybe this helps the tablet not miss the first one?
-    
-    #decide how the shapes should be placed
-    shapesDrawn = numpy.ones((3,5,2))*numpy.NaN; #3rd dim: shapeType_code, ID
-    
-    #clear screen
-    pub_clear.publish(Empty());
     
     #listen for touch events on the tablet
     touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
@@ -300,10 +322,11 @@ if __name__ == "__main__":
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
     
+    wordToLearn = args.word;
     if(wordToLearn is not None):
         message = String();
         message.data = wordToLearn;
-        wordMessageManager(wordToLearn);
+        wordMessageManager(message);
     else:
         print('Waiting for word to write');
 
