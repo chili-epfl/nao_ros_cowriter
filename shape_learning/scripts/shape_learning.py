@@ -36,6 +36,7 @@ sizeScale = 0.04;           #Desired max dimension of shape (metres)
 numDesiredShapePoints = 15.0; #Number of points to downsample the length of shapes to (not guaranteed)
 TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
+WORDS_TOPIC = 'words_to_write';
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
 
@@ -169,7 +170,7 @@ def initialiseShapeLearners(charsToLearn):
         settings_shapeLearners.append(settings);
     return shapeLearners, settings_shapeLearners;
 
-def startShapeLearners(settings_shapeLearners):
+def startShapeLearners(shapeLearners,settings_shapeLearners):
     #start learning        
     for i in range(len(shapeLearners)):
         [shape, paramValue] = shapeLearners[i].startLearning(settings_shapeLearners[i].initialBounds);
@@ -218,10 +219,8 @@ def feedbackManager(feedbackMessage):
             if(simulatedFeedback):
                 bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
                 publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
-        else:
-            if(args.show):      
-                plt.show(block=True);                                       #PRETTY SURE THIS WILL MEAN ONCE ONE LETTER CONVERGES IT STOPS.. but the plot only works for one letter anyway
-            
+        else: 
+            pass
     except ValueError:
         print('Skipping message because it is not for a known shape');
         
@@ -255,22 +254,32 @@ def touchInfoManager(pointStamped):
         
     
    
+def wordMessageManager(message):
+    global shapeLearners, settings_shapeLearners, wordToLearn #@todo make class attributes
+
+    wordToLearn = message.data;
+    
+    [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(wordToLearn); 
+    startShapeLearners(shapeLearners,settings_shapeLearners);
+
         
 
 ### --------------------------------------------------------------- MAIN
-
 wordToLearn = [];
+shapeLearners = [];
 if __name__ == "__main__":
     #parse arguments
     import argparse
     parser = argparse.ArgumentParser(description='Publish shapes on the \
     /shapes_to_draw topic and adapt them based on feedback received on the /shape_feedback topic');
-    parser.add_argument('word', action="store",
-                    help='a string containing the letters to be learnt');
+    parser.add_argument('word', nargs='?', action="store",
+                    help='a string containing the letters to be learnt (if not present, will wait for one from ROS topic)');
     parser.add_argument('--show', action='store_true', help='display plots of the shapes');
 
     args = parser.parse_args();
+
     wordToLearn = args.word;
+        
     if(args.show):
         plt.ion(); #to plot one shape at a time
     
@@ -281,14 +290,21 @@ if __name__ == "__main__":
     
     #clear screen
     pub_clear.publish(Empty());
-
-    #start learning
-    [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(wordToLearn); 
-    startShapeLearners(settings_shapeLearners);
     
     #listen for touch events on the tablet
     touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
         
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
     feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
+
+    #listen for words to write
+    words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
+    
+    if(wordToLearn is not None):
+        message = String();
+        message.data = wordToLearn;
+        wordMessageManager(wordToLearn);
+    else:
+        print('Waiting for word to write');
+
     rospy.spin();
