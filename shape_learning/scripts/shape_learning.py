@@ -39,6 +39,8 @@ TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 WORDS_TOPIC = 'words_to_write';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
+GESTURE_TOPIC = 'long_touch_info'; #topic for location of 'shape good enough' gesture
+
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
 
@@ -239,56 +241,106 @@ def publishShapeAndWaitForFeedback(shape, shapeType):
         traj = make_traj_msg(shape, shapeCentre);
         pub_traj.publish(traj);   
             
-def feedbackManager(feedbackMessage):
+def feedbackManager(stringReceived):
     #todo: make class attribute
-    feedback = feedbackMessage.data.split('_');
+    feedback = stringReceived.data.split('_');
     shape_messageFor = feedback[0];
     feedbackData = feedback[1];
     bestShape_index = int(feedbackData);
+    
+    
     try:
         shapeIndex_messageFor = shapesLearnt.index(shape_messageFor);
-        print('Ok, I''ll work on the '+shape_messageFor);
-        [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
-        
-        if(not converged):
-            publishShapeAndWaitForFeedback(newShape,shape_messageFor);
-            if(simulatedFeedback):
-                bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
-                publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
-        else: 
-            pass
+        processMessage = True;
     except ValueError:
+        processMessage = False;
+    
+    noNewShape = False; #usually make a new shape based on feedback
+    
+    if(len(feedback)>2): 
+        feedbackMessage = feedback[2];
+        if(feedbackMessage == 'noNewShape'):
+            noNewShape = True;
+        else:
+            processMessage = False;
+            print('Unknown message received in feedback string');
+        
+    if(processMessage):    
+        if(noNewShape): #just respond to feedback, don't make new shape 
+            print('Ok, thanks for helping me');
+            shapeLearners[shapeIndex_messageFor].respondToFeedback(bestShape_index);
+        else:
+            print('Ok, I''ll work on the '+shape_messageFor);
+            [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
+            
+            if(not converged):
+                publishShapeAndWaitForFeedback(newShape,shape_messageFor);
+                if(simulatedFeedback):
+                    bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
+                    publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
+            else: 
+                pass
+    else:
         print('Skipping message because it is not for a known shape');
         
 def touchInfoManager(pointStamped):
     touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
-
-    #map touch location to closest shape drawn
-    touchCell = (touchLocation - shapeSize/2)/shapeSize;
-    numRows = shapesDrawn.shape[0];
-    row = (numRows -1)- int(round(touchCell[1]));
-    col = int(round(touchCell[0]));
+    if(shapesDrawn is None):
+        print('Ignoring touch because no shapes have been drawn');
+    else:
+        #map touch location to closest shape drawn
+        touchCell = (touchLocation - shapeSize/2)/shapeSize;
     
-    try:
-        shapeType_code = shapesDrawn[row,col,0];
-        shapeType = currentWord[int(shapeType_code)];
-        numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-        shapeID = int(shapesDrawn[row,col,1]);
+        numRows = shapesDrawn.shape[0];
+        row = (numRows -1)- int(round(touchCell[1]));
+        col = int(round(touchCell[0]));
         
-        if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
+        try:
+            shapeType_code = shapesDrawn[row,col,0];
+            shapeType = currentWord[int(shapeType_code)];
+            numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+            shapeID = int(shapesDrawn[row,col,1]);
+            
+            if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
+                print('Ignoring touch because it wasn''t on a valid shape');
+
+            elif(numShapes_shapeType==numRows):#last shape selected but no more space
+                print('Can''t fit anymore letters on the screen');
+            else:
+                print('Shape touched: '+shapeType+str(shapeID))
+                feedbackMessage = String();
+                feedbackMessage.data = shapeType + '_' + str(shapeID);
+                feedbackManager(feedbackMessage);
+        except ValueError:    #@todo map to closest shape if appropriate
             print('Ignoring touch because it wasn''t on a valid shape');
-
-        elif(numShapes_shapeType==numRows):#last shape selected but no more space
-            print('Can''t fit anymore letters on the screen');
-        else:
-            print('Shape touched: '+shapeType+str(shapeID))
-            feedbackMessage = String();
-            feedbackMessage.data = shapeType + '_' + str(shapeID);
-            feedbackManager(feedbackMessage);
-    except ValueError:    #@todo map to closest shape if appropriate
-        print('Ignoring touch because it wasn''t on a valid shape');
         
-    
+def gestureManager(pointStamped):
+    gestureLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
+    if(shapesDrawn is None):
+        print('Ignoring touch because no shapes have been drawn');
+    else:
+        #map touch location to closest shape drawn
+        touchCell = (gestureLocation - shapeSize/2)/shapeSize;
+        numRows = shapesDrawn.shape[0];
+        row = (numRows -1)- int(round(touchCell[1]));
+        col = int(round(touchCell[0]));
+        
+        try:
+            shapeType_code = shapesDrawn[row,col,0];
+            shapeType = currentWord[int(shapeType_code)];
+            numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+            shapeID = int(shapesDrawn[row,col,1]);
+            
+            if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
+                print('Ignoring touch because it wasn''t on a valid shape');
+
+            else:
+                print('Shape selected as best: '+shapeType+str(shapeID))
+                feedbackMessage = String();
+                feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
+                feedbackManager(feedbackMessage);
+        except ValueError:    #@todo map to closest shape if appropriate
+            print('Ignoring touch because it wasn''t on a valid shape');    
    
 def wordMessageManager(message):
     global shapeLearners, settings_shapeLearners, shapesDrawn, currentWord, wordsLearnt #@todo make class attributes
@@ -325,7 +377,7 @@ wordsLearnt = [];
 shapeLearners = [];
 currentWord = [];
 settings_shapeLearners = [];
-shapesDrawn = [];
+shapesDrawn = None;
 shapeFinished = False;
 if __name__ == "__main__":
     #parse arguments
@@ -345,6 +397,9 @@ if __name__ == "__main__":
     
     #listen for touch events on the tablet
     touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
+    
+    #listen for touch events on the tablet
+    gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, gestureManager);
         
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
     feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
