@@ -38,6 +38,7 @@ numDesiredShapePoints = 15.0; #Number of points to downsample the length of shap
 TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 WORDS_TOPIC = 'words_to_write';
+SHAPE_FINISHED_TOPIC = 'shape_finished';
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
 
@@ -187,13 +188,19 @@ def initialiseShapeLearners(wordToLearn):
             newInitialBounds[1] += boundExpandingAmount;
             settings_shapeLearners[shapeType_index].initialBounds = newInitialBounds;
     return shapeLearners, settings_shapeLearners;
-
+def onShapeFinished(message):
+    #shape_finished = message.data;
+    #if(shape_finished == shape_upTo):
+    global shapeFinished;
+    shapeFinished = True;
+        
 def startShapeLearners(wordToLearn):
-    global shapesLearnt, shapeLearners, settings_shapeLearners
+    global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished
 
     #start learning        
     for i in range(len(wordToLearn)):
         shapeType = wordToLearn[i];
+        print('Sending '+shapeType);
         shape_index = shapesLearnt.index(shapeType);
         [shape, paramValue] = shapeLearners[shape_index].startLearning(settings_shapeLearners[shape_index].initialBounds);
         publishShapeAndWaitForFeedback(shape,shapeType);
@@ -201,7 +208,14 @@ def startShapeLearners(wordToLearn):
             publishSimulatedFeedback(0,shapeType,settings_shapeLearners[shape_index].doGroupwiseComparison); 
 
         else:
-            rospy.sleep(10.0);
+            rospy.sleep(0.1);
+            #listen for notification that the letter is finished
+            shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
+            while(not shapeFinished):
+                rospy.sleep(0.1);
+            shape_finished_subscriber.unregister();
+            shapeFinished = False;
+            print('Shape finished.');
         
 ### ----------------------------------------- PUBLISH SIMULATED FEEDBACK    
 def publishSimulatedFeedback(bestShape_index, shapeType, doGroupwiseComparison):           
@@ -233,6 +247,7 @@ def feedbackManager(feedbackMessage):
     bestShape_index = int(feedbackData);
     try:
         shapeIndex_messageFor = shapesLearnt.index(shape_messageFor);
+        print('Ok, I''ll work on the '+shape_messageFor);
         [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
         
         if(not converged):
@@ -276,10 +291,23 @@ def touchInfoManager(pointStamped):
     
    
 def wordMessageManager(message):
-    global shapeLearners, settings_shapeLearners, shapesDrawn, currentWord #@todo make class attributes
+    global shapeLearners, settings_shapeLearners, shapesDrawn, currentWord, wordsLearnt #@todo make class attributes
     
     wordToLearn = message.data;
     currentWord = wordToLearn;
+    
+    try:
+        word_index = wordsLearnt.index(currentWord);
+        wordSeenBefore = True;
+    except ValueError: 
+        wordSeenBefore = False;
+        wordsLearnt.append(currentWord);
+   
+    if(wordSeenBefore):
+        print(currentWord+' again, ok.');
+    else:
+        print(currentWord+', alright.');
+    
         
     #clear screen
     pub_clear.publish(Empty());
@@ -287,16 +315,18 @@ def wordMessageManager(message):
     #initialise shapes on screen
     shapesDrawn = numpy.ones((3,5,2))*numpy.NaN; #3rd dim: shapeType_code, ID
     
-    [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(wordToLearn); 
-    startShapeLearners(wordToLearn);
+    [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(currentWord); 
+    startShapeLearners(currentWord);
         
 
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
+wordsLearnt = [];
 shapeLearners = [];
 currentWord = [];
 settings_shapeLearners = [];
 shapesDrawn = [];
+shapeFinished = False;
 if __name__ == "__main__":
     #parse arguments
     import argparse
@@ -321,6 +351,7 @@ if __name__ == "__main__":
 
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
+
     
     wordToLearn = args.word;
     if(wordToLearn is not None):

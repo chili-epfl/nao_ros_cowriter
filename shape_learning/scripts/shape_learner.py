@@ -32,6 +32,7 @@ class ShapeLearner:
         self.paramToVary = settings.paramToVary;
         self.minParamDiff = settings.minParamDiff;
         
+        self.bounds = settings.initialBounds;
         self.converged = False;
         self.numIters = 0;
                         
