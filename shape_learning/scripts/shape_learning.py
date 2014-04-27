@@ -30,9 +30,9 @@ boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter 
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
 SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
-t0 = 2.5;                   #Time allowed for the first point in traj (seconds)
+t0 = 3;                   #Time allowed for the first point in traj (seconds)
 dt = 0.35                   #Seconds between points in traj
-delayBeforeExecuting = 2.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
+delayBeforeExecuting = 3; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
 sizeScale = 0.04;           #Desired max dimension of shape (metres)
 numDesiredShapePoints = 15.0; #Number of points to downsample the length of shapes to (not guaranteed)
 tabletConnected = True;
@@ -44,7 +44,7 @@ SHAPE_FINISHED_TOPIC = 'shape_finished';
 GESTURE_TOPIC = 'long_touch_info'; #topic for location of 'shape good enough' gesture
 
 #Nao parameters
-NAO_IP = '192.168.1.4';
+NAO_IP = '192.168.1.10';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
 naoConnected = True;
 effector   = "RArm" #LArm or RArm
@@ -52,6 +52,9 @@ effector   = "RArm" #LArm or RArm
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
 
+phrases_askingForFeedback = {"Any better?","How about now?"};
+phrases_actingOnFeedback_drawAgain = {"Ok, I\'ll work on the ","The "};
+ 
 if(naoConnected):
     import robots
     from robots import naoqi_request
@@ -144,6 +147,7 @@ def generateSettings(shapeType):
     doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
     
     if shapeType == 'c':
+        paramToVary = 3;
         datasetFile = '../res/c_dataset.txt';
     elif shapeType == 'd':
         datasetFile = '../res/d_cursive_dataset.txt';
@@ -154,17 +158,19 @@ def generateSettings(shapeType):
     elif shapeType == 'n':
         datasetFile = '../res/n_dataset.txt';
     elif shapeType == 'o':
+        paramToVary = 3;
         datasetFile = '../res/o_dataset.txt';
     elif shapeType == 's':
         datasetFile = '../res/s_print_dataset.txt';
     elif shapeType == 'u':
+        paramToVary = 4;
         datasetFile = '../res/u_dataset.txt';
     elif shapeType == 'w':
         datasetFile = '../res/w_dataset.txt';
     else:
         raise RuntimeError("Dataset is not known for shape "+ shapeType);
     settings = ShapeLearner.SettingsStruct(shape_learning = shapeType,
-    paramToVary = 2, doGroupwiseComparison = True, initialBounds = [], minParamDiff = 0.2);
+    paramToVary = paramToVary, doGroupwiseComparison = True, initialBounds = [], minParamDiff = 0.2);
     return settings, datasetFile, initialBounds_stdDevMultiples
     
 def initialiseShapeLearners(wordToLearn):
@@ -211,15 +217,17 @@ def lookAtShape(traj):
     nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,target_frame]); #look at shape again    
     
 def lookAndAskForFeedback(toSay):
-    nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,False])])
+    #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,False])])
 
-    nao.setpose("Stand");
+    #put arm down
+    nao.execute([naoqi_request("motion","angleInterpolationWithSpeed",["RArm",joints_standInit,0.2])])
+    #nao.setpose("StandInit");
     #rospy.sleep(1.0) #so doesn't jump
     
     if(effector=="RArm"):   #person will be on our right
-        nao.look_at([0.05,-0.1,0,"gaze"]);
+        nao.look_at([0.1,-0.1,0,"gaze"]);
     else:                   #person will be on our left
-        nao.look_at([0.05,0.1,0,"gaze"]);   
+        nao.look_at([0.1,0.1,0,"gaze"]);   
 
     textToSpeech.say(toSay);
     print('NAO: '+toSay);
@@ -244,8 +252,10 @@ def startShapeLearners(wordToLearn):
     global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished
     centre = [];
     if(naoConnected):
-        nao.setpose("StandInit")
-        nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+        #nao.setpose("StandInit")
+        #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+        #rospy.sleep(0.3);
+        pass
         
     #start learning        
     for i in range(len(wordToLearn)):
@@ -301,9 +311,9 @@ def publishShapeAndWaitForFeedback(shape, shapeType):
         
         shapeCentre = getPositionToDrawAt(shapeType);
         traj = make_traj_msg(shape, shapeCentre);
-        trajStartPosition = traj.poses[0].pose.position;
-        #print(str(trajStartPosition.x)+', '+str(trajStartPosition.y))
-        nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
+        if(naoConnected):
+            trajStartPosition = traj.poses[0].pose.position;
+            nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
         pub_traj.publish(traj);   
     
     return trajStartPosition
@@ -343,11 +353,12 @@ def feedbackManager(stringReceived):
             
         else:
             if(naoConnected):
-                toSay = 'Ok, I''ll work on the '+shape_messageFor;
+                toSay = 'Ok, I\'ll work on the '+shape_messageFor;
                 print('NAO: '+toSay);
                 textToSpeech.say(toSay);
-                nao.setpose("StandInit")
-                nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+                #nao.setpose("StandInit")
+                rospy.sleep(0.4);
+                #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
 
             [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
             
@@ -520,7 +531,9 @@ if __name__ == "__main__":
             port)        # parent broker port
         textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
         textToSpeech.setLanguage('English')
-        
+        nao.setpose("StandInit");
+        [temp,joints_standInit] = nao.execute([naoqi_request("motion","getAngles",["RArm",True])]);
+        nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
     wordToLearn = args.word;
     if(wordToLearn is not None):
         message = String();
