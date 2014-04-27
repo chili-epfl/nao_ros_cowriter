@@ -21,6 +21,13 @@ from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped, Point, PointStamped
 from std_msgs.msg import String, Empty
 
+#Nao parameters
+NAO_IP = '192.168.1.10';
+#NAO_IP = '127.0.0.1';#connect to webots simulator locally
+naoConnected = True;
+naoWriting = False;
+effector   = "RArm" #LArm or RArm
+
 #shape learning parameters
 numPrincipleComponents = 5; #Number of principle components to keep during PCA of dataset
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
@@ -30,27 +37,29 @@ boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter 
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
 SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
-t0 = 3;                   #Time allowed for the first point in traj (seconds)
-dt = 0.35                   #Seconds between points in traj
-delayBeforeExecuting = 3; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
+if(naoWriting):
+    t0 = 3;                 #Time allowed for the first point in traj (seconds)
+    dt = 0.35               #Seconds between points in traj
+    delayBeforeExecuting = 3;#How far in future to request the traj be executed (to account for transmission delays and preparedness)
+else:
+    t0 = 0.05;
+    dt = 0.1;
+    delayBeforeExecuting = 1.0;
 sizeScale = 0.04;           #Desired max dimension of shape (metres)
-numDesiredShapePoints = 15.0; #Number of points to downsample the length of shapes to (not guaranteed)
-tabletConnected = True;
+numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to (not guaranteed)
 
+#tablet parameters
+tabletConnected = True;     #If true, will wait for shape_finished notification before proceeding to the next shape (rather than a fixed delay)
 TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 WORDS_TOPIC = 'words_to_write';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
 GESTURE_TOPIC = 'long_touch_info'; #topic for location of 'shape good enough' gesture
 
-#Nao parameters
-NAO_IP = '192.168.1.10';
-#NAO_IP = '127.0.0.1';#connect to webots simulator locally
-naoConnected = True;
-effector   = "RArm" #LArm or RArm
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
+pub_feedback = rospy.Publisher(FEEDBACK_TOPIC, String);
 
 phrases_askingForFeedback = {"Any better?","How about now?"};
 phrases_actingOnFeedback_drawAgain = {"Ok, I\'ll work on the ","The "};
@@ -217,12 +226,9 @@ def lookAtShape(traj):
     nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,target_frame]); #look at shape again    
     
 def lookAndAskForFeedback(toSay):
-    #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,False])])
-
-    #put arm down
-    nao.execute([naoqi_request("motion","angleInterpolationWithSpeed",["RArm",joints_standInit,0.2])])
-    #nao.setpose("StandInit");
-    #rospy.sleep(1.0) #so doesn't jump
+    if(naoWriting):
+        #put arm down
+        nao.execute([naoqi_request("motion","angleInterpolationWithSpeed",["RArm",joints_standInit,0.2])])
     
     if(effector=="RArm"):   #person will be on our right
         nao.look_at([0.1,-0.1,0,"gaze"]);
@@ -320,8 +326,8 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
     return trajStartPosition
             
 def feedbackManager(stringReceived):
-    global shapeFinished
-    #todo: make class attribute
+    global shapeFinished    #todo: make class attribute
+    
     feedback = stringReceived.data.split('_');
     shape_messageFor = feedback[0];
     feedbackData = feedback[1];
@@ -421,7 +427,8 @@ def touchInfoManager(pointStamped):
                 print('Shape touched: '+shapeType+str(shapeID))
                 feedbackMessage = String();
                 feedbackMessage.data = shapeType + '_' + str(shapeID);
-                feedbackManager(feedbackMessage);
+                pub_feedback.publish(feedbackMessage);
+                
         except ValueError:    #@todo map to closest shape if appropriate
             print('Ignoring touch because it wasn''t on a valid shape');
         
@@ -449,7 +456,8 @@ def gestureManager(pointStamped):
                 print('Shape selected as best: '+shapeType+str(shapeID))
                 feedbackMessage = String();
                 feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
-                feedbackManager(feedbackMessage);
+                pub_feedback.publish(feedbackMessage);
+                
         except ValueError:    #@todo map to closest shape if appropriate
             print('Ignoring touch because it wasn''t on a valid shape');    
    
@@ -532,9 +540,11 @@ if __name__ == "__main__":
             port)        # parent broker port
         textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
         textToSpeech.setLanguage('English')
-        nao.setpose("StandInit");
-        [temp,joints_standInit] = nao.execute([naoqi_request("motion","getAngles",["RArm",True])]);
-        nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+        if(naoWriting):
+            nao.setpose("StandInit");
+            [temp,joints_standInit] = nao.execute([naoqi_request("motion","getAngles",["RArm",True])]);
+            nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+            
     wordToLearn = args.word;
     if(wordToLearn is not None):
         message = String();
