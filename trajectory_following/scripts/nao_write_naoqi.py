@@ -5,7 +5,6 @@ pyrobots interface to naoqi SDK.
 Requires pyrobots and a running robot/simulation with ALNetwork proxies.
 
 """
-
 from naoqi import ALModule, ALBroker, ALProxy
 from math import sqrt
 from geometry_msgs.msg import Transform, PoseStamped
@@ -34,15 +33,29 @@ def on_traj(traj):
     if(hasFallen == False): #no harm in executing trajectory
         if(effector == "LArm"):
             motionProxy.openHand("LHand");
+            roll = -1.7; #rotate wrist to the left (about the x axis, w.r.t. robot frame)
         else:
             motionProxy.openHand("RHand");
+            roll = 1.7; #rotate wrist to the right (about the x axis, w.r.t. robot frame)
+
         target = PoseStamped()
 
         target_frame = traj.header.frame_id
         target.header.frame_id = target_frame
         
         path = []; times = [];
+        trajStartPosition = traj.poses[0].pose.position;
+        traj.poses[0].pose.position.z = 0.05
+        target.pose.position = deepcopy(traj.poses[0].pose.position)
+        target.pose.orientation = deepcopy(traj.poses[0].pose.orientation)
+        trajStartPosition_robot = tl.transformPose("base_footprint",target)
+        point = [trajStartPosition_robot.pose.position.x,trajStartPosition_robot.pose.position.y,trajStartPosition_robot.pose.position.z,roll,0,0];
         
+        path.append(point);
+        timeToStartPosition = traj.poses[0].header.stamp.to_sec();
+        times.append(timeToStartPosition);
+        motionProxy.positionInterpolation(effector,space,path,axisMask,times,isAbsolute);
+        path = []; times = [];
         for trajp in traj.poses:
         
             trajp.pose.position.z = 0.05
@@ -50,25 +63,18 @@ def on_traj(traj):
             target.pose.position = deepcopy(trajp.pose.position)
             target.pose.orientation = deepcopy(trajp.pose.orientation)
             target_robot = tl.transformPose("base_footprint",target)
-
-            #(roll, pitch, yaw) = tf.transformations.euler_from_quaternion([target_robot.pose.orientation.x, target_robot.pose.orientation.y, target_robot.pose.orientation.z, target_robot.pose.orientation.w])
-            
-            if(effector == "LArm"):
-                roll = -1.7; #rotate wrist to the left (about the x axis, w.r.t. robot frame)
-            else:
-                roll = 1.7; #rotate wrist to the right (about the x axis, w.r.t. robot frame)
             
             point = [target_robot.pose.position.x,target_robot.pose.position.y,target_robot.pose.position.z,roll,0,0]#roll,pitch,yaw];
             path.append(point);
-            times.append(trajp.header.stamp.to_sec());
+            times.append(trajp.header.stamp.to_sec() - timeToStartPosition);
         
         #wait until time instructed to start executing
-        rospy.sleep(traj.header.stamp-rospy.Time.now());
-        print("executing traj at "+str(rospy.Time.now())) ;
+        rospy.sleep(traj.header.stamp-rospy.Time.now()+rospy.Duration(timeToStartPosition));
+        print("executing rest of traj at "+str(rospy.Time.now())) ;
         startTime = rospy.Time.now();
-        motionProxy.positionInterpolation(effector,space,path,axisMask,times,isAbsolute);
-        print("Time taken for whole trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
-        motionProxy.wbEnableEffectorControl(effector,False);
+        #pdb.set_trace()
+        motionProxy.positionInterpolation(effector,space,path[1:],axisMask,times[1:],isAbsolute);
+        print("Time taken for rest of trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
 
     else:
         print("Got traj but not allowed to execute it because I've fallen");
