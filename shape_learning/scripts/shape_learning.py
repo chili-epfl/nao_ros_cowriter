@@ -104,10 +104,10 @@ def downsample_1d(myarr,factor,estimator=mean):
     return dsarr
     
     
-def make_traj_msg(shape, shapeCentre):      
+def make_traj_msg(shape, shapeCentre, headerString):      
     
     traj = Path();
-    traj.header.frame_id = FRAME;
+    traj.header.frame_id = headerString;
     traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
     shape = ShapeModeler.normaliseShapeHeight(shape);
     numPointsInShape = len(shape)/2;   
@@ -264,7 +264,7 @@ def startShapeLearners(wordToLearn):
         shape_index = shapesLearnt.index(shapeType);
         [shape, paramValue] = shapeLearners[shape_index].startLearning(settings_shapeLearners[shape_index].initialBounds);
         
-        centre = publishShapeAndWaitForFeedback(shape,shapeType);
+        centre = publishShapeAndWaitForFeedback(shape,shapeType, settings_shapeLearners[shape_index].paramToVary, paramValue);
         if(simulatedFeedback): #pretend first one isn't good enough
             publishSimulatedFeedback(0,shapeType,settings_shapeLearners[shape_index].doGroupwiseComparison); 
 
@@ -300,7 +300,7 @@ def publishSimulatedFeedback(bestShape_index, shapeType, doGroupwiseComparison):
         feedbackManager(feedback);
         
 ### ------------------------------------------------------ PUBLISH SHAPE        
-def publishShapeAndWaitForFeedback(shape, shapeType):
+def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
     trajStartPosition = Point();
     if(simulatedFeedback):
         if(args.show):
@@ -310,7 +310,8 @@ def publishShapeAndWaitForFeedback(shape, shapeType):
     else:
         
         shapeCentre = getPositionToDrawAt(shapeType);
-        traj = make_traj_msg(shape, shapeCentre);
+        headerString = shapeType+'_'+str(param)+'_'+str(paramValue);
+        traj = make_traj_msg(shape, shapeCentre, headerString);
         if(naoConnected):
             trajStartPosition = traj.poses[0].pose.position;
             nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
@@ -363,7 +364,7 @@ def feedbackManager(stringReceived):
             [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
             
             if(not converged):
-                centre = publishShapeAndWaitForFeedback(newShape,shape_messageFor);
+                centre = publishShapeAndWaitForFeedback(newShape, shape_messageFor, settings_shapeLearners[shapeIndex_messageFor].paramToVary, newParamValue);
                 if(simulatedFeedback):
                     bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
                     publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
