@@ -26,19 +26,20 @@ AXIS_MASK_WY = 16
 AXIS_MASK_WZ = 32
 
 effector   = "RArm" #LArm or RArm
-#NAO_IP = '192.168.1.3';
-NAO_IP = '127.0.0.1';#connect to webots simulator locally
+NAO_IP = '192.168.1.4';
+#NAO_IP = '127.0.0.1';#connect to webots simulator locally
 
 def on_traj(traj):
     print("got traj at "+str(rospy.Time.now())) 
     if(hasFallen == False): #no harm in executing trajectory
-        
+        if(effector == "LArm"):
+            motionProxy.openHand("LHand");
+        else:
+            motionProxy.openHand("RHand");
         target = PoseStamped()
 
         target_frame = traj.header.frame_id
         target.header.frame_id = target_frame
-        trajStartPosition = traj.poses[0].pose.position;
-        trajStartPosition_robot = tl.transformPose("base_footprint",target)
         
         path = []; times = [];
         
@@ -67,7 +68,8 @@ def on_traj(traj):
         startTime = rospy.Time.now();
         motionProxy.positionInterpolation(effector,space,path,axisMask,times,isAbsolute);
         print("Time taken for whole trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
-        
+        motionProxy.wbEnableEffectorControl(effector,False);
+
     else:
         print("Got traj but not allowed to execute it because I've fallen");
 
@@ -106,15 +108,10 @@ if __name__ == "__main__":
     
     motionProxy.wbEnableEffectorControl(effector,False); #if robot has fallen it will have a hard time getting up if the effector is still trying to be kept in a particular position
     postureProxy.goToPosture("StandInit", 0.5)
-    
-    if(effector == "LArm"):
-        motionProxy.openHand("LHand");
-    else:
-        motionProxy.openHand("RHand");
 
     tl = tf.TransformListener()
 
-    motionProxy.wbEnableEffectorControl(effector,False);
+    motionProxy.wbEnableEffectorControl(effector,True);
     rospy.sleep(2)
 
     space      = 2

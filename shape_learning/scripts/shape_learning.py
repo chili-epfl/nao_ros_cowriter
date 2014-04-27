@@ -30,21 +30,34 @@ boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter 
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
 SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
-t0 = 1.5;                   #Time allowed for the first point in traj (seconds)
+t0 = 2.5;                   #Time allowed for the first point in traj (seconds)
 dt = 0.35                   #Seconds between points in traj
-delayBeforeExecuting = 1.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
+delayBeforeExecuting = 2.5; #How far in future to request the traj be executed (to account for transmission delays and preparedness)
 sizeScale = 0.04;           #Desired max dimension of shape (metres)
 numDesiredShapePoints = 15.0; #Number of points to downsample the length of shapes to (not guaranteed)
+tabletConnected = True;
+
 TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 WORDS_TOPIC = 'words_to_write';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
 GESTURE_TOPIC = 'long_touch_info'; #topic for location of 'shape good enough' gesture
 
+#Nao parameters
+NAO_IP = '192.168.1.4';
+#NAO_IP = '127.0.0.1';#connect to webots simulator locally
+naoConnected = True;
+effector   = "RArm" #LArm or RArm
+
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
 
-rospy.init_node("shape_learner");
+if(naoConnected):
+    import robots
+    from robots import naoqi_request
+    nao = robots.Nao(ros=True, host=NAO_IP);
+else:
+    rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
 shapeWidth = 0.05;
@@ -190,25 +203,64 @@ def initialiseShapeLearners(wordToLearn):
             newInitialBounds[1] += boundExpandingAmount;
             settings_shapeLearners[shapeType_index].initialBounds = newInitialBounds;
     return shapeLearners, settings_shapeLearners;
+    
+def lookAtShape(traj):
+    trajStartPosition = traj.poses[0].pose.position;
+    trajStartPosition_robot = tl.transformPose("base_footprint",target)
+    rospy.sleep(2.0);
+    nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,target_frame]); #look at shape again    
+    
+def lookAndAskForFeedback(toSay):
+    nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,False])])
+
+    nao.setpose("Stand");
+    #rospy.sleep(1.0) #so doesn't jump
+    
+    if(effector=="RArm"):   #person will be on our right
+        nao.look_at([0.05,-0.1,0,"gaze"]);
+    else:                   #person will be on our left
+        nao.look_at([0.05,0.1,0,"gaze"]);   
+
+    textToSpeech.say(toSay);
+    print('NAO: '+toSay);
+
+def relax():    
+    pNames = "LArm"
+    pStiffnessLists = 0.0
+    pTimeLists = 1.0
+    nao.execute([naoqi_request("motion","stiffnessInterpolation",[pNames, pStiffnessLists, pTimeLists])]);
+    
+    pNames = "RArm"
+    nao.execute([naoqi_request("motion","stiffnessInterpolation",[pNames, pStiffnessLists, pTimeLists])]);
+
+    pNames = "Head"
+    nao.execute([naoqi_request("motion","stiffnessInterpolation",[pNames, pStiffnessLists, pTimeLists])]);    
+    
 def onShapeFinished(message):
-    #shape_finished = message.data;
-    #if(shape_finished == shape_upTo):
     global shapeFinished;
     shapeFinished = True;
         
 def startShapeLearners(wordToLearn):
     global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished
-
+    centre = [];
+    if(naoConnected):
+        nao.setpose("StandInit")
+        nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+        
     #start learning        
     for i in range(len(wordToLearn)):
         shapeType = wordToLearn[i];
         print('Sending '+shapeType);
         shape_index = shapesLearnt.index(shapeType);
         [shape, paramValue] = shapeLearners[shape_index].startLearning(settings_shapeLearners[shape_index].initialBounds);
-        publishShapeAndWaitForFeedback(shape,shapeType);
+        
+        centre = publishShapeAndWaitForFeedback(shape,shapeType);
         if(simulatedFeedback): #pretend first one isn't good enough
             publishSimulatedFeedback(0,shapeType,settings_shapeLearners[shape_index].doGroupwiseComparison); 
 
+        elif(not tabletConnected):
+            rospy.sleep(10);
+            print('Shape finished');
         else:
             rospy.sleep(0.1);
             #listen for notification that the letter is finished
@@ -218,6 +270,14 @@ def startShapeLearners(wordToLearn):
             shape_finished_subscriber.unregister();
             shapeFinished = False;
             print('Shape finished.');
+            
+    if(naoConnected):
+        lookAndAskForFeedback("What do you think?");
+        rospy.sleep(0.7);
+        nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+        nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
+
+     
         
 ### ----------------------------------------- PUBLISH SIMULATED FEEDBACK    
 def publishSimulatedFeedback(bestShape_index, shapeType, doGroupwiseComparison):           
@@ -231,17 +291,25 @@ def publishSimulatedFeedback(bestShape_index, shapeType, doGroupwiseComparison):
         
 ### ------------------------------------------------------ PUBLISH SHAPE        
 def publishShapeAndWaitForFeedback(shape, shapeType):
+    trajStartPosition = Point();
     if(simulatedFeedback):
         if(args.show):
             plt.figure(1);
             ShapeModeler.normaliseAndShowShape(shape);
             time.sleep(1.3); 
     else:
+        
         shapeCentre = getPositionToDrawAt(shapeType);
         traj = make_traj_msg(shape, shapeCentre);
+        trajStartPosition = traj.poses[0].pose.position;
+        #print(str(trajStartPosition.x)+', '+str(trajStartPosition.y))
+        nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
         pub_traj.publish(traj);   
+    
+    return trajStartPosition
             
 def feedbackManager(stringReceived):
+    global shapeFinished
     #todo: make class attribute
     feedback = stringReceived.data.split('_');
     shape_messageFor = feedback[0];
@@ -263,21 +331,52 @@ def feedbackManager(stringReceived):
             noNewShape = True;
         else:
             processMessage = False;
-            print('Unknown message received in feedback string');
-        
+            print('Unknown message received in feedback string');   
+         
     if(processMessage):    
         if(noNewShape): #just respond to feedback, don't make new shape 
-            print('Ok, thanks for helping me');
+            if(naoConnected):
+                toSay = 'Ok, thanks for helping me';
+                print('NAO: '+toSay);
+                textToSpeech.say(toSay); 
             shapeLearners[shapeIndex_messageFor].respondToFeedback(bestShape_index);
+            
         else:
-            print('Ok, I''ll work on the '+shape_messageFor);
+            if(naoConnected):
+                toSay = 'Ok, I''ll work on the '+shape_messageFor;
+                print('NAO: '+toSay);
+                textToSpeech.say(toSay);
+                nao.setpose("StandInit")
+                nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+
             [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
             
             if(not converged):
-                publishShapeAndWaitForFeedback(newShape,shape_messageFor);
+                centre = publishShapeAndWaitForFeedback(newShape,shape_messageFor);
                 if(simulatedFeedback):
                     bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
                     publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
+
+                elif(not tabletConnected):
+                    rospy.sleep(10);
+                    print('Shape finished');
+                    
+                else: #wait for finished signal from tablet
+                    rospy.sleep(0.1);
+                    #listen for notification that the letter is finished
+                    shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
+                    while(not shapeFinished):
+                        rospy.sleep(0.1);
+                    shape_finished_subscriber.unregister();
+                    shapeFinished = False;
+                    print('Shape finished.');
+                    
+                if(naoConnected):
+                    lookAndAskForFeedback("How about now?");
+                    rospy.sleep(0.7);
+                    nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+                    nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
+            
             else: 
                 pass
     else:
@@ -355,11 +454,14 @@ def wordMessageManager(message):
         wordSeenBefore = False;
         wordsLearnt.append(currentWord);
    
-    if(wordSeenBefore):
-        print(currentWord+' again, ok.');
-    else:
-        print(currentWord+', alright.');
+    if(naoConnected):
+        if(wordSeenBefore):
+            toSay = currentWord+' again, ok.';
+        else:
+            toSay = currentWord+', alright.';
     
+        print('NAO: '+toSay);
+        textToSpeech.say(toSay);    
         
     #clear screen
     pub_clear.publish(Empty());
@@ -406,8 +508,19 @@ if __name__ == "__main__":
 
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
-
     
+    if(naoConnected):
+        from naoqi import ALBroker, ALProxy
+        #start speech (ROS isn't working..)
+        port = 9559;
+        myBroker = ALBroker("myBroker", #I'm not sure that pyrobots doesn't already have one of these open called NAOqi?
+            "0.0.0.0",   # listen to anyone
+            0,           # find a free port and use it
+            NAO_IP,      # parent broker IP
+            port)        # parent broker port
+        textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
+        textToSpeech.setLanguage('English')
+        
     wordToLearn = args.word;
     if(wordToLearn is not None):
         message = String();
