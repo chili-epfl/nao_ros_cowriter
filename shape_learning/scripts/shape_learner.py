@@ -104,13 +104,17 @@ class ShapeLearner:
             self.bestParamValue = self.shapeToParamMapping[bestShape];
             print('Chosen param value: ' + str(self.bestParamValue));
             bestParamValue_index = bisect.bisect(self.params_sorted,self.bestParamValue) - 1; #indexing seems to start at 1 with bisect
-            self.bounds = [self.params_sorted[bestParamValue_index-1],self.params_sorted[bestParamValue_index+1] ];
+            newBounds = [self.params_sorted[bestParamValue_index-1],self.params_sorted[bestParamValue_index+1]];
+                
             #restrict bounds if they were caused by other shapes, because it must be sufficiently different to said shape(s)
             if((bestParamValue_index-1) > 0): #not the default min
-                self.bounds[0] += self.minParamDiff;
+                newBounds[0] += self.minParamDiff;
             if((bestParamValue_index+1) < (len(self.params_sorted)-1)): #not the default max
-                self.bounds[1] -= self.minParamDiff;
+                newBounds[1] -= self.minParamDiff;
 
+            if(not (newBounds[0]>newBounds[1])): #protect from bounds switching expected order
+                self.bounds = newBounds;
+                
         else: #do pairwise comparison with most recent shape and previous
             #restrict limits
             if( bestShape == 'new' ):   #new shape is better
@@ -147,7 +151,8 @@ class ShapeLearner:
             return self.converged, newShape, newParamValue
             
         else:     
-            [newShape, newParamValue] = self.makeShapeSimilarTo(self.bestParamValue);     
+            [newShape, newParamValue] = self.makeShapeSimilarTo(self.bestParamValue);
+            self.newParamValue = newParamValue;     
             print('Converged');  
             return self.converged, newShape, newParamValue   
             

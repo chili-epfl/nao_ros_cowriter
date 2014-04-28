@@ -82,45 +82,53 @@ positionList = [positionList_shape0, positionList_shape1, positionList_shape2];
 
 def getPositionToDrawAt(shapeType):
     shapeType_code = currentWord.index(shapeType);
-    row = -1; col = -1;
-    foundSpace = False;
-    positionList_index = 0;
-    while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
-        #check next position in position list for this shape
-        [row_test, col_test] = positionList[shapeType_code][positionList_index];
-        if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
-            #space is available
-            row = row_test;
-            col = col_test;
-            foundSpace = True;
-        else:
-            #space is not available - keep looking
-            positionList_index += 1;
-    
-    if(foundSpace):
-        shapeID = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-        shapesDrawn[row,col,0] = shapeType_code;
-        shapesDrawn[row,col,1] = shapeID;   
+    if(shapeType_code > (len(positionList)-1)):
+        print('I don\'t know how to position that shape');
+        return [-1, -1];
     else:
-        print('I cannot draw here.');
-    numRows = shapesDrawn.shape[0];
-    position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
-    return position;
+        row = -1; col = -1;
+        foundSpace = False;
+        positionList_index = 0;
+        while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
+            #check next position in position list for this shape
+            [row_test, col_test] = positionList[shapeType_code][positionList_index];
+            if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
+                #space is available
+                row = row_test;
+                col = col_test;
+                foundSpace = True;
+            else:
+                #space is not available - keep looking
+                positionList_index += 1;
+        
+        if(foundSpace):
+            shapeID = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+            shapesDrawn[row,col,0] = shapeType_code;
+            shapesDrawn[row,col,1] = shapeID;   
+        else:
+            print('I cannot draw here.');
+        numRows = shapesDrawn.shape[0];
+        position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
+        return position;
         
 def isAvailablePositionToDrawAt(shapeType):
     shapeType_code = currentWord.index(shapeType);
-    row = -1; col = -1;
-    foundSpace = False;
-    positionList_index = 0;
-    while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
-        #check next position in position list for this shape
-        [row_test, col_test] = positionList[shapeType_code][positionList_index];
-        if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
-            #space is available
-            foundSpace = True;
-        else:
-            #space is not available - keep looking
-            positionList_index += 1;
+    if(shapeType_code > (len(positionList)-1)):
+        print('I don\'t know how to position that shape');
+        foundSpace = False;
+    else:
+        row = -1; col = -1;
+        foundSpace = False;
+        positionList_index = 0;
+        while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
+            #check next position in position list for this shape
+            [row_test, col_test] = positionList[shapeType_code][positionList_index];
+            if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
+                #space is available
+                foundSpace = True;
+            else:
+                #space is not available - keep looking
+                positionList_index += 1;
 
     return foundSpace;
     '''
@@ -215,7 +223,8 @@ def generateSettings(shapeType):
     doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
     
     if shapeType == 'c':
-        paramToVary = 3;
+        paramToVary = 4;
+        initialBounds_stdDevMultiples = [-10, 10];
         datasetFile = '../res/c_dataset.txt';
     elif shapeType == 'd':
         datasetFile = '../res/d_cursive_dataset.txt';
@@ -226,7 +235,8 @@ def generateSettings(shapeType):
     elif shapeType == 'n':
         datasetFile = '../res/n_dataset.txt';
     elif shapeType == 'o':
-        paramToVary = 3;
+        paramToVary = 4;
+        initialBounds_stdDevMultiples = [-6, 3];
         datasetFile = '../res/o_dataset.txt';
     elif shapeType == 's':
         datasetFile = '../res/s_print_dataset.txt';
