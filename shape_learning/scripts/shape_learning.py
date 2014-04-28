@@ -31,8 +31,8 @@ effector   = "RArm" #LArm or RArm
 #shape learning parameters
 numPrincipleComponents = 10; #Number of principle components to keep during PCA of dataset
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
-boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again
-
+boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again @TODO should be relative to parameter sensitivity
+numItersBeforeConsideredStuck = 5; #After how long should we consider that the user is stuck in a sub-optimal convergence?
 #trajectory publishing parameters
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
@@ -461,7 +461,7 @@ def feedbackManager(stringReceived):
                 rospy.sleep(0.4);
                 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
 
-            [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
+            [numItersConverged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
             
             
             centre = publishShapeAndWaitForFeedback(newShape, shape_messageFor, settings_shapeLearners[shapeIndex_messageFor].paramToVary, newParamValue);
@@ -482,14 +482,22 @@ def feedbackManager(stringReceived):
                 shape_finished_subscriber.unregister();
                 shapeFinished = False;
                 print('Shape finished.');
-                
-            if(naoConnected):
-                lookAndAskForFeedback("How about now?");
-                rospy.sleep(0.7);
-                nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-                nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
-            if(converged):
+				
+			if(numItersConverged>0):
                 print("I can\'t make anymore different shapes");
+				
+			if(numItersConverged > numItersBeforeConsideredStuck):
+				print("I think I'm stuck...");
+				if(naoConnected):
+					textToSpeech.say("I\'m not sure I understand. Let\'s try again.");
+				currentBounds = shapeLearners[shapeIndex_messageFor].getBounds;
+				shapeLearners[shapeIndex_messageFor].setBounds(currentBounds*2); #increase bounds to hopefully get un-stuck
+			else:
+				if(naoConnected):
+					lookAndAskForFeedback("How about now?");
+					rospy.sleep(0.7);
+					nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+					nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
                 
     else:
         print('Skipping message because it is not for a known shape');
