@@ -24,7 +24,7 @@ from std_msgs.msg import String, Empty
 #Nao parameters
 NAO_IP = '192.168.1.10';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
-naoConnected = True;
+naoConnected = False;
 naoWriting = False;
 effector   = "RArm" #LArm or RArm
 
@@ -45,7 +45,7 @@ else:
     t0 = 0.05;
     dt = 0.1;
     delayBeforeExecuting = 1.0;
-sizeScale = 0.04;           #Desired max dimension of shape (metres)
+sizeScale = 0.038;           #Desired max dimension of shape (metres)
 numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to (not guaranteed)
 
 #tablet parameters
@@ -72,9 +72,58 @@ else:
     rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
-shapeWidth = 0.05;
-shapeHeight = 0.044;
+shapeWidth = 0.04;
+shapeHeight = 0.0465;
 shapeSize = numpy.array([shapeWidth,shapeHeight]);
+positionList_shape0 = [[1,1],[0,0],[2,0],[1,0],[0,1],[2,1],[0,2],[2,2],[1,2],[0,3],[2,3],[1,3],[1,4],[0,4],[2,4]];
+positionList_shape1 = [[1,2],[0,2],[2,2],[1,1],[1,3],[0,1],[0,3],[2,1],[2,3],[1,0],[0,0],[2,0],[1,4],[0,4],[2,4]];
+positionList_shape2 = [[1,3],[0,4],[2,4],[1,4],[1,2],[0,3],[2,3],[0,2],[2,2],[0,1],[2,1],[1,1],[1,0],[0,0],[2,0]];
+positionList = [positionList_shape0, positionList_shape1, positionList_shape2];
+
+def getPositionToDrawAt(shapeType):
+    shapeType_code = currentWord.index(shapeType);
+    row = -1; col = -1;
+    foundSpace = False;
+    positionList_index = 0;
+    while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
+        #check next position in position list for this shape
+        [row_test, col_test] = positionList[shapeType_code][positionList_index];
+        if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
+            #space is available
+            row = row_test;
+            col = col_test;
+            foundSpace = True;
+        else:
+            #space is not available - keep looking
+            positionList_index += 1;
+    
+    if(foundSpace):
+        shapeID = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+        shapesDrawn[row,col,0] = shapeType_code;
+        shapesDrawn[row,col,1] = shapeID;   
+    else:
+        print('I cannot draw here.');
+    numRows = shapesDrawn.shape[0];
+    position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
+    return position;
+        
+def isAvailablePositionToDrawAt(shapeType):
+    shapeType_code = currentWord.index(shapeType);
+    row = -1; col = -1;
+    foundSpace = False;
+    positionList_index = 0;
+    while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
+        #check next position in position list for this shape
+        [row_test, col_test] = positionList[shapeType_code][positionList_index];
+        if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
+            #space is available
+            foundSpace = True;
+        else:
+            #space is not available - keep looking
+            positionList_index += 1;
+
+    return foundSpace;
+    '''
 def getPositionToDrawAt(shapeType):
     global currentWord
     offset = currentWord.index(shapeType);
@@ -90,6 +139,16 @@ def getPositionToDrawAt(shapeType):
     position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
     return position;
     
+def isAvailablePositionToDrawAt(shapeType):
+    global currentWord
+        
+    shapeType_code = currentWord.index(shapeType);
+    shapeType = currentWord[int(shapeType_code)];
+    numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+    numRows = shapesDrawn.shape[0];
+    isAvailable = (numShapes_shapeType < numRows);#can fit more shapes as long as there are more rows
+    return isAvailable;    
+    '''
 from numpy import mean;
 def downsample_1d(myarr,factor,estimator=mean):
     """
@@ -421,7 +480,7 @@ def touchInfoManager(pointStamped):
             if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
                 print('Ignoring touch because it wasn''t on a valid shape');
 
-            elif(numShapes_shapeType==numRows):#last shape selected but no more space
+            elif(not isAvailablePositionToDrawAt(shapeType)):#no more space
                 print('Can''t fit anymore letters on the screen');
             else:
                 print('Shape touched: '+shapeType+str(shapeID))
