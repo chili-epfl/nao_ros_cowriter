@@ -60,8 +60,15 @@ class ShapeModeler:
         if(not params.shape == (self.numPrincipleComponents,1)):
             raise RuntimeError("Vector of parameters must have dimensions of (numPrincipleComponents,1)")
         shape = self.meanShape + numpy.dot(self.principleComponents,params);
-        return shape;        
-     
+        return shape;  
+              
+    #Generate a shape modifying the given parameter
+    def makeShapeVaryingParam(self, paramToVary, paramValue):
+        xb = numpy.zeros((self.numPrincipleComponents,1));
+        xb[paramToVary-1] = paramValue;
+        shape = self.makeShape(xb);
+        return shape;
+        
     #Draw 'paramToVary' value from uniform distribution with limits 'bounds' and make shape
     def makeRandomShapeFromUniform(self, paramToVary, bounds):
         xb = numpy.zeros((self.numPrincipleComponents,1));
@@ -73,7 +80,7 @@ class ShapeModeler:
     #Draw 'paramToVary' value from triangular distribution with limits 'bounds' and mode 'mode' and make shape       
     def makeRandomShapeFromTriangular(self, paramToVary, bounds, mode):
         b = numpy.zeros((self.numPrincipleComponents,1));
-        sample = random.triangular(bounds[0],bounds[1], mode);
+        sample = random.triangular(bounds[0],mode,bounds[1]);
         b[paramToVary-1] = sample;
         return self.makeShape(b), sample;       
         

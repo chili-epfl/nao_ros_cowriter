@@ -29,7 +29,7 @@ naoWriting = False;
 effector   = "RArm" #LArm or RArm
 
 #shape learning parameters
-numPrincipleComponents = 5; #Number of principle components to keep during PCA of dataset
+numPrincipleComponents = 10; #Number of principle components to keep during PCA of dataset
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
 boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again
 
@@ -41,11 +41,16 @@ if(naoWriting):
     t0 = 3;                 #Time allowed for the first point in traj (seconds)
     dt = 0.35               #Seconds between points in traj
     delayBeforeExecuting = 3;#How far in future to request the traj be executed (to account for transmission delays and preparedness)
+elif(naoConnected):
+    t0 = 0.05;
+    dt = 0.1;
+    delayBeforeExecuting = 3.5;
 else:
     t0 = 0.05;
     dt = 0.1;
-    delayBeforeExecuting = 1.0;
-sizeScale = 0.038;           #Desired max dimension of shape (metres)
+    delayBeforeExecuting = 3.5;
+sizeScale_height = 0.035;           #Desired height of shape (metres)
+sizeScale_width = 0.023;           #Desired width of shape (metres)
 numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to (not guaranteed)
 
 #tablet parameters
@@ -199,8 +204,8 @@ def make_traj_msg(shape, shapeCentre, headerString):
     
     for i in range(numPointsInShape):
         point = PoseStamped();
-        point.pose.position.x = x_shape[i,0]*sizeScale;
-        point.pose.position.y = -y_shape[i,0]*sizeScale;
+        point.pose.position.x = x_shape[i,0]*sizeScale_width;
+        point.pose.position.y = -y_shape[i,0]*sizeScale_height;
         
         point.pose.position.x+= + shapeCentre[0];
         point.pose.position.y+= + shapeCentre[1];
@@ -217,38 +222,58 @@ def make_traj_msg(shape, shapeCentre, headerString):
 ###--------------------------------------------- WORD LEARNING FUNCTIONS
 # @todo make methods of a class
 
-def generateSettings(shapeType):
+def generateSettings(shapeType, learningMode):
     paramToVary = 2;            #Natural number between 1 and numPrincipleComponents, representing which principle component to vary from the template
     initialBounds_stdDevMultiples = [-6, 6];  #Starting bounds for paramToVary, as multiples of the parameter's observed standard deviation in the dataset
     doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
+    initialParamValue = numpy.NaN;
     
-    if shapeType == 'c':
+    if shapeType == 'a':
+        paramToVary = 6;
+        initialBounds_stdDevMultiples = [-5, 5];
+        datasetFile = '../res/a_noHook_dataset.txt';
+    elif shapeType == 'c':
         paramToVary = 4;
         initialBounds_stdDevMultiples = [-10, 10];
         datasetFile = '../res/c_dataset.txt';
     elif shapeType == 'd':
         datasetFile = '../res/d_cursive_dataset.txt';
     elif shapeType == 'e':
+        paramToVary = 3; 
+        initialBounds_stdDevMultiples = [-6, 14];
         datasetFile = '../res/e_dataset.txt';
+        initialParamValue = 0.8;
     elif shapeType == 'm':
+        paramToVary = 6; 
+        initialBounds_stdDevMultiples = [-10, -6];
         datasetFile = '../res/m_dataset.txt';
+        initialParamValue = -0.5;#0.0;
     elif shapeType == 'n':
+        paramToVary = 7; 
         datasetFile = '../res/n_dataset.txt';
+        initialParamValue = 0.0;
     elif shapeType == 'o':
         paramToVary = 4;
         initialBounds_stdDevMultiples = [-6, 3];
         datasetFile = '../res/o_dataset.txt';
+    elif shapeType == 'r':
+        paramToVary = 1;
+        datasetFile = '../res/r_print_dataset.txt';
     elif shapeType == 's':
         datasetFile = '../res/s_print_dataset.txt';
     elif shapeType == 'u':
-        paramToVary = 4;
+        paramToVary = 3;
         datasetFile = '../res/u_dataset.txt';
+    elif shapeType == 'v':
+        paramToVary = 6;
+        datasetFile = '../res/v_dataset.txt';
     elif shapeType == 'w':
         datasetFile = '../res/w_dataset.txt';
     else:
         raise RuntimeError("Dataset is not known for shape "+ shapeType);
     settings = ShapeLearner.SettingsStruct(shape_learning = shapeType,
-    paramToVary = paramToVary, doGroupwiseComparison = True, initialBounds = [], minParamDiff = 0.2);
+    paramToVary = paramToVary, doGroupwiseComparison = True, initialBounds = [], 
+    initialParamValue = initialParamValue, minParamDiff = 0.4);
     return settings, datasetFile, initialBounds_stdDevMultiples
     
 def initialiseShapeLearners(wordToLearn):
@@ -609,6 +634,7 @@ if __name__ == "__main__":
             port)        # parent broker port
         textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
         textToSpeech.setLanguage('English')
+        textToSpeech.setVolume(0.2);
         if(naoWriting):
             nao.setpose("StandInit");
             [temp,joints_standInit] = nao.execute([naoqi_request("motion","getAngles",["RArm",True])]);

@@ -22,6 +22,7 @@ class ShapeLearner:
     'paramToVary',      #Natural number between 1 and number of parameters in the associated ShapeModeler, representing the parameter to learn
     'doGroupwiseComparison', #instead of pairwise comparison with most recent two shapes 
     'initialBounds',    #Initial acceptable parameter range
+    'initialParamValue',#Initial parameter value (NaN if to be drawn uniformly from initialBounds)
     'minParamDiff']);   #How different two shapes' parameters need to be to be published for comparison
     #@todo: make groupwise comparison/pairwise comparison different implementations of shapeLearner class
 
@@ -31,17 +32,23 @@ class ShapeLearner:
         self.shape_learning = settings.shape_learning;
         self.paramToVary = settings.paramToVary;
         self.minParamDiff = settings.minParamDiff;
+        self.initialParamValue = settings.initialParamValue;
         
         self.bounds = settings.initialBounds;
         self.converged = False;
         self.numIters = 0;
                         
-### ----------------------------------------------------- START LEARNING        
+### ----------------------------------------------------- START LEARNING
     def startLearning(self, startingBounds):
         self.bounds = startingBounds;
         
         #make initial shape
-        [shape, paramValue] = self.shapeModeler.makeRandomShapeFromUniform(self.paramToVary, self.bounds);
+        if(numpy.isnan(self.initialParamValue)):
+            [shape, paramValue] = self.shapeModeler.makeRandomShapeFromUniform(self.paramToVary, self.bounds);
+        else:
+            paramValue = self.initialParamValue;
+            shape = self.shapeModeler.makeShapeVaryingParam(self.paramToVary, paramValue);
+
         self.bestParamValue = paramValue;
         print('Bounds: '+str(self.bounds));
         print('Test param: '+str(self.bestParamValue));
@@ -53,6 +60,25 @@ class ShapeLearner:
             self.newParamValue = paramValue;
         
         return shape, paramValue;
+
+### ---------------------------------------- START LEARNING - TRIANGULAR       
+    def startLearningAt(self, startingBounds, startingParamValue):
+        self.bounds = startingBounds;
+        
+        #make initial shape
+        [shape, paramValue] = self.shapeModeler.makeRandomShapeFromriangular(self.paramToVary, self.bounds, startingParamValue);
+        self.bestParamValue = paramValue;
+        print('Bounds: '+str(self.bounds));
+        print('Test param: '+str(self.bestParamValue));
+        if(self.doGroupwiseComparison):
+            self.params_sorted = [self.bounds[0], self.bounds[1]];
+            bisect.insort(self.params_sorted, self.bestParamValue);
+            self.shapeToParamMapping = [self.bestParamValue];
+        else:
+            self.newParamValue = paramValue;
+        
+        return shape, paramValue;
+
  
 ### ----------------------------------------------- MAKE DIFFERENT SHAPE        
     def makeShapeDifferentTo(self, paramValue):
