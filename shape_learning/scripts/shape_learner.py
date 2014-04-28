@@ -73,7 +73,18 @@ class ShapeLearner:
             self.shapeToParamMapping.append(newParamValue);
             
         return newShape, newParamValue   
-
+        
+### ------------------------------------------------- MAKE SIMILAR SHAPE        
+    def makeShapeSimilarTo(self, paramValue):
+        #make new shape, but don't enforce that it is sufficiently different
+        [newShape, newParamValue] = self.shapeModeler.makeRandomShapeFromTriangular(self.paramToVary, self.bounds, self.bestParamValue);
+        
+        #store it as an attempt
+        if(self.doGroupwiseComparison):
+            bisect.insort(self.params_sorted, newParamValue);
+            self.shapeToParamMapping.append(newParamValue);
+            
+        return newShape, newParamValue 
 ### ---------------------------------------- GENERATE SIMULATED FEEDBACK
     def generateSimulatedFeedback(self, shape, newParamValue):
         #code in place of feedback from user: go towards goal parameter value
@@ -113,8 +124,7 @@ class ShapeLearner:
                 self.bounds[0] = worstParamValue; #increase min bound to worst so we don't try any lower
             else: #shape with higher value is worse
                 self.bounds[1] = worstParamValue; #decrease max bound to worst so we don't try any higher
-
-        
+     
 ### ------------------------------------------------------------ ITERATE      
     def generateNewShapeGivenFeedback(self, bestShape):        
         #------------------------------------------- respond to feedback
@@ -136,9 +146,12 @@ class ShapeLearner:
             print('Test param: '+str(newParamValue));         
             return self.converged, newShape, newParamValue
             
-        else:          
+        else:     
+            [newShape, newParamValue] = self.makeShapeSimilarTo(self.bestParamValue);     
             print('Converged');  
-            return self.converged, bestShape, self.bestParamValue    
+            return self.converged, newShape, newParamValue   
             
     def getParameterBounds(self):
         return self.bounds;
+        
+ 

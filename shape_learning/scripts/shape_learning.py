@@ -369,34 +369,34 @@ def feedbackManager(stringReceived):
 
             [converged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
             
-            if(not converged):
-                centre = publishShapeAndWaitForFeedback(newShape, shape_messageFor, settings_shapeLearners[shapeIndex_messageFor].paramToVary, newParamValue);
-                if(simulatedFeedback):
-                    bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
-                    publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
-
-                elif(not tabletConnected):
-                    rospy.sleep(10);
-                    print('Shape finished');
-                    
-                else: #wait for finished signal from tablet
-                    rospy.sleep(0.1);
-                    #listen for notification that the letter is finished
-                    shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
-                    while(not shapeFinished):
-                        rospy.sleep(0.1);
-                    shape_finished_subscriber.unregister();
-                    shapeFinished = False;
-                    print('Shape finished.');
-                    
-                if(naoConnected):
-                    lookAndAskForFeedback("How about now?");
-                    rospy.sleep(0.7);
-                    nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-                    nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
             
-            else: 
-                pass
+            centre = publishShapeAndWaitForFeedback(newShape, shape_messageFor, settings_shapeLearners[shapeIndex_messageFor].paramToVary, newParamValue);
+            if(simulatedFeedback):
+                bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
+                publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
+
+            elif(not tabletConnected):
+                rospy.sleep(10);
+                print('Shape finished');
+                
+            else: #wait for finished signal from tablet
+                rospy.sleep(0.1);
+                #listen for notification that the letter is finished
+                shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
+                while(not shapeFinished):
+                    rospy.sleep(0.1);
+                shape_finished_subscriber.unregister();
+                shapeFinished = False;
+                print('Shape finished.');
+                
+            if(naoConnected):
+                lookAndAskForFeedback("How about now?");
+                rospy.sleep(0.7);
+                nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+                nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
+            if(converged):
+                print("I can\'t make anymore different shapes");
+                
     else:
         print('Skipping message because it is not for a known shape');
         
