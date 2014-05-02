@@ -285,7 +285,7 @@ def generateSettings(shapeType, learningMode):
         initialParamValue = 0.0;
     elif shapeType == 'o':
         paramToVary = 4;
-        initialBounds_stdDevMultiples = [-6, 3];
+        initialBounds_stdDevMultiples = [-3.5, 3];
         datasetFile = '../res/o_dataset.txt';
     elif shapeType == 'r':
         paramToVary = 1;
@@ -356,9 +356,9 @@ def lookAndAskForFeedback(toSay):
         nao.execute([naoqi_request("motion","angleInterpolationWithSpeed",["RArm",joints_standInit,0.2])])
     
     if(effector=="RArm"):   #person will be on our right
-        nao.look_at([0.1,-0.1,0,"gaze"]);
+        nao.look_at([0.1,-0.1,0.5,"base_link"]);
     else:                   #person will be on our left
-        nao.look_at([0.1,0.1,0,"gaze"]);   
+        nao.look_at([0.1,0.1,0.5,"base_link"]);  
 
     textToSpeech.say(toSay);
     print('NAO: '+toSay);
@@ -380,7 +380,7 @@ def onShapeFinished(message):
     shapeFinished = True;
         
 def startShapeLearners(wordToLearn):
-    global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished
+    global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished, gesture_subscriber, touch_subscriber
     centre = [];
     if(naoConnected):
         #nao.setpose("StandInit")
@@ -417,7 +417,12 @@ def startShapeLearners(wordToLearn):
         rospy.sleep(0.7);
         nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
         nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
-
+    
+    #listen for touch events on the tablet
+    touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
+        
+    #listen for touch events on the tablet
+    gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, gestureManager); 
      
         
 ### ----------------------------------------- PUBLISH SIMULATED FEEDBACK    
@@ -451,7 +456,7 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
     return trajStartPosition
             
 def feedbackManager(stringReceived):
-    global shapeFinished    #todo: make class attribute
+    global shapeFinished, touch_subscriber, gesture_subscriber   #todo: make class attributes
     
     feedback = stringReceived.data.split('_');
     shape_messageFor = feedback[0];
@@ -513,27 +518,33 @@ def feedbackManager(stringReceived):
                 shape_finished_subscriber.unregister();
                 shapeFinished = False;
                 print('Shape finished.');
-				
-			if(numItersConverged>0):
-                print("I can\'t make anymore different shapes");
-				
-			if(numItersConverged > numItersBeforeConsideredStuck):
-				print("I think I'm stuck...");
-				if(naoConnected):
-					textToSpeech.say("I\'m not sure I understand. Let\'s try again.");
-				currentBounds = shapeLearners[shapeIndex_messageFor].getBounds;
-				shapeLearners[shapeIndex_messageFor].setBounds(currentBounds*2); #increase bounds to hopefully get un-stuck
-			else:
-				if(naoConnected):
-					lookAndAskForFeedback("How about now?");
-					rospy.sleep(0.7);
-					nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-					nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
                 
+            if(numItersConverged>0):
+                print("I can\'t make anymore different shapes");
+                
+            if(numItersConverged > numItersBeforeConsideredStuck):
+                print("I think I'm stuck...");
+                if(naoConnected):
+                    textToSpeech.say("I\'m not sure I understand. Let\'s try again.");
+                currentBounds = shapeLearners[shapeIndex_messageFor].getBounds;
+                shapeLearners[shapeIndex_messageFor].setBounds(currentBounds*2); #increase bounds to hopefully get un-stuck
+            else:
+                if(naoConnected):
+                    lookAndAskForFeedback("How about now?");
+                    rospy.sleep(0.7);
+                    nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+                    nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
+               
+        #listen for touch events on the tablet
+        touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
+        
+        #listen for touch events on the tablet
+        gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, gestureManager);
     else:
         print('Skipping message because it is not for a known shape');
         
 def touchInfoManager(pointStamped):
+    global touch_subscriber, gesture_subscriber 
     touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
     if(shapesDrawn is None):
         print('Ignoring touch because no shapes have been drawn');
@@ -557,6 +568,9 @@ def touchInfoManager(pointStamped):
             elif(not isAvailablePositionToDrawAt(shapeType)):#no more space
                 print('Can''t fit anymore letters on the screen');
             else:
+                touch_subscriber.unregister();
+                gesture_subscriber.unregister(); 
+                
                 print('Shape touched: '+shapeType+str(shapeID))
                 feedbackMessage = String();
                 feedbackMessage.data = shapeType + '_' + str(shapeID);
@@ -566,6 +580,7 @@ def touchInfoManager(pointStamped):
             print('Ignoring touch because it wasn''t on a valid shape');
         
 def gestureManager(pointStamped):
+    global touch_subscriber, gesture_subscriber  
     gestureLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
     if(shapesDrawn is None):
         print('Ignoring touch because no shapes have been drawn');
@@ -586,6 +601,9 @@ def gestureManager(pointStamped):
                 print('Ignoring touch because it wasn''t on a valid shape');
 
             else:
+                touch_subscriber.unregister();
+                gesture_subscriber.unregister(); 
+                
                 print('Shape selected as best: '+shapeType+str(shapeID))
                 feedbackMessage = String();
                 feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
@@ -656,12 +674,6 @@ if __name__ == "__main__":
         plt.ion(); #to plot one shape at a time
     
     rospy.sleep(1.0); #maybe this helps the tablet not miss the first one?
-    
-    #listen for touch events on the tablet
-    touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
-    
-    #listen for touch events on the tablet
-    gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, gestureManager);
         
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
     feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
