@@ -37,8 +37,8 @@ class ShapeLearner:
         self.bounds = settings.initialBounds;
         self.converged = False;
         self.numIters = 0;
-		self.numItersConverged = 0;
-		
+        self.numItersConverged = 0;
+        
 ### ----------------------------------------------------- START LEARNING
     def startLearning(self, startingBounds):
         self.bounds = startingBounds;
@@ -165,14 +165,16 @@ class ShapeLearner:
         #continue if there are more shapes to try which are different enough
         if((abs(self.bounds[1]-self.bestParamValue)-self.minParamDiff < tol) and (abs(self.bestParamValue-self.bounds[0])-self.minParamDiff) < tol):
             self.converged = True;
-			
+        else:
+            self.converged = False;
+            
         
         #-------------------------------------------- continue iterating
         self.numIters+=1;
                
         #try again if shape is not good enough
         if(not self.converged):
-			self.numItersConverged = 0;
+            self.numItersConverged = 0;
             [newShape, newParamValue] = self.makeShapeDifferentTo(self.bestParamValue);
             self.newParamValue = newParamValue;
             print('Bounds: '+str(self.bounds));
@@ -180,7 +182,7 @@ class ShapeLearner:
             return self.numItersConverged, newShape, newParamValue
             
         else:     
-			self.numItersConverged += 1;
+            self.numItersConverged += 1;
             [newShape, newParamValue] = self.makeShapeSimilarTo(self.bestParamValue);
             self.newParamValue = newParamValue;     
             print('Converged');  
@@ -189,6 +191,6 @@ class ShapeLearner:
     def getParameterBounds(self):
         return self.bounds;
     
-	def setParameterBounds(self, bounds):
+    def setParameterBounds(self, bounds):
         self.bounds = bounds;
  
