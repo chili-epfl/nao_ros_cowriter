@@ -17,6 +17,7 @@ from enum import Enum
 
 from shape_modeler import ShapeModeler
 from shape_learner import ShapeLearner
+from shape_display_manager import ShapeDisplayManager
 
 import rospy
 from nav_msgs.msg import Path
@@ -99,91 +100,8 @@ else:
     rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
-shapeWidth = 0.04;
-shapeHeight = 0.0465;
-shapeSize = numpy.array([shapeWidth,shapeHeight]);
-positionList_shape0 = [[1,1],[0,0],[2,0],[1,0],[0,1],[2,1],[0,2],[2,2],[1,2],[0,3],[2,3],[1,3],[1,4],[0,4],[2,4]];
-positionList_shape1 = [[1,2],[0,2],[2,2],[1,1],[1,3],[0,1],[0,3],[2,1],[2,3],[1,0],[0,0],[2,0],[1,4],[0,4],[2,4]];
-positionList_shape2 = [[1,3],[0,4],[2,4],[1,4],[1,2],[0,3],[2,3],[0,2],[2,2],[0,1],[2,1],[1,1],[1,0],[0,0],[2,0]];
-positionList = [positionList_shape0, positionList_shape1, positionList_shape2];
 
-def getPositionToDrawAt(shapeType):
-    shapeType_code = currentWord.index(shapeType);
-    if(shapeType_code > (len(positionList)-1)):
-        print('I don\'t know how to position that shape');
-        return [-1, -1];
-    else:
-        row = -1; col = -1;
-        foundSpace = False;
-        positionList_index = 0;
-        while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
-            #check next position in position list for this shape
-            [row_test, col_test] = positionList[shapeType_code][positionList_index];
-            if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
-                #space is available
-                row = row_test;
-                col = col_test;
-                foundSpace = True;
-            else:
-                #space is not available - keep looking
-                positionList_index += 1;
-        
-        if(foundSpace):
-            shapeID = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-            shapesDrawn[row,col,0] = shapeType_code;
-            shapesDrawn[row,col,1] = shapeID;   
-        else:
-            print('I cannot draw here.');
-        numRows = shapesDrawn.shape[0];
-        position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
-        return position;
-        
-def isAvailablePositionToDrawAt(shapeType):
-    shapeType_code = currentWord.index(shapeType);
-    if(shapeType_code > (len(positionList)-1)):
-        print('I don\'t know how to position that shape');
-        foundSpace = False;
-    else:
-        row = -1; col = -1;
-        foundSpace = False;
-        positionList_index = 0;
-        while((not foundSpace) and (positionList_index < len(positionList[shapeType_code]))):
-            #check next position in position list for this shape
-            [row_test, col_test] = positionList[shapeType_code][positionList_index];
-            if(numpy.isnan(shapesDrawn[row_test,col_test,0])):
-                #space is available
-                foundSpace = True;
-            else:
-                #space is not available - keep looking
-                positionList_index += 1;
 
-    return foundSpace;
-    '''
-def getPositionToDrawAt(shapeType):
-    global currentWord
-    offset = currentWord.index(shapeType);
-    col = 1 + offset;
-    
-    shapeType_code = currentWord.index(shapeType);
-    shapeID = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-    row = shapeID;
-    shapesDrawn[row,col,0] = shapeType_code;
-    shapesDrawn[row,col,1] = shapeID;
-    
-    numRows = shapesDrawn.shape[0];
-    position = [(col+0.5)*shapeWidth,((numRows-1)-row+0.5)*shapeHeight];
-    return position;
-    
-def isAvailablePositionToDrawAt(shapeType):
-    global currentWord
-        
-    shapeType_code = currentWord.index(shapeType);
-    shapeType = currentWord[int(shapeType_code)];
-    numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-    numRows = shapesDrawn.shape[0];
-    isAvailable = (numShapes_shapeType < numRows);#can fit more shapes as long as there are more rows
-    return isAvailable;    
-    '''
 from numpy import mean;
 def downsample_1d(myarr,factor,estimator=mean):
     """
@@ -449,7 +367,8 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
             time.sleep(1.3); 
     else:
         
-        shapeCentre = getPositionToDrawAt(shapeType);
+        shapeType_code = currentWord.index(shapeType);
+        shapeCentre = shapeDisplayManager.displayNewShape(shapeType_code);
         headerString = shapeType+'_'+str(param)+'_'+str(paramValue);
         traj = make_traj_msg(shape, shapeCentre, headerString);
         if(naoConnected):
@@ -560,41 +479,29 @@ def touchInfoManager(pointStamped):
     touchTime = pointStamped.header.stamp.to_sec();
     if((touchTime - prevTouchTime)>minTimeBetweenTouches):
         touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
-        if(shapesDrawn is None):
-            print('Ignoring touch because no shapes have been drawn');
-        else:
-            #map touch location to closest shape drawn
-            touchCell = (touchLocation - shapeSize/2)/shapeSize;
         
-            numRows = shapesDrawn.shape[0];
-            row = (numRows -1)- int(round(touchCell[1]));
-            col = int(round(touchCell[0]));
-            
-            try:
-                shapeType_code = shapesDrawn[row,col,0];
-                shapeType = currentWord[int(shapeType_code)];
-                numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-                shapeID = int(shapesDrawn[row,col,1]);
+        #map touch location to closest shape drawn
+        [shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(touchLocation);
+        
+        if(shapeType_code == -1):
+            print('Touch not inside the display area');
+        elif(shapeID == -1):
+            print('Ignoring touch because not on valid shape');
+        else:
+        
+            if(not shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code)):#no more space
+                print('Can\'t fit anymore letters on the screen');
+            else:
+                touch_subscriber.unregister(); #TODO unregister regardless of outcome, and re-subscribe if 'bad' click
+                gesture_subscriber.unregister();
+                              
+                shapeType = currentWord[shapeType_code];
+                print('Shape touched: '+shapeType+str(shapeID))  
+                feedbackMessage = String();
+                feedbackMessage.data = shapeType + '_' + str(shapeID);
+                pub_feedback.publish(feedbackMessage);
+                feedbackManager(feedbackMessage);
                 
-                
-                if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
-                    print('Ignoring touch because it wasn''t on a valid shape');
-
-                elif(not isAvailablePositionToDrawAt(shapeType)):#no more space
-                    print('Can''t fit anymore letters on the screen');
-                else:
-                    touch_subscriber.unregister();
-                    gesture_subscriber.unregister();
-                
-                    print('Shape touched: '+shapeType+str(shapeID))
-                    feedbackMessage = String();
-                    feedbackMessage.data = shapeType + '_' + str(shapeID);
-                    pub_feedback.publish(feedbackMessage);
-                    feedbackManager(feedbackMessage);
-                
-            
-            except ValueError:    #@todo map to closest shape if appropriate
-                print('Ignoring touch because it wasn''t on a valid shape');
         prevTouchTime = touchTime;
     else:
         print('Ignoring touch because it was too close to the one before');
@@ -605,43 +512,35 @@ def gestureManager(pointStamped):
     touchTime = pointStamped.header.stamp.to_sec(); 
     if((touchTime - prevTouchTime)>minTimeBetweenTouches):
         gestureLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
-        if(shapesDrawn is None):
-            print('Ignoring touch because no shapes have been drawn');
-        else:
-            #map touch location to closest shape drawn
-            touchCell = (gestureLocation - shapeSize/2)/shapeSize;
-            numRows = shapesDrawn.shape[0];
-            row = (numRows -1)- int(round(touchCell[1]));
-            col = int(round(touchCell[0]));
-            
-            try:
-                shapeType_code = shapesDrawn[row,col,0];
-                shapeType = currentWord[int(shapeType_code)];
-                numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-                shapeID = int(shapesDrawn[row,col,1]);
-                
-                if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
-                    print('Ignoring touch because it wasn''t on a valid shape');
 
-                else:
-                    
-                    touch_subscriber.unregister();
-                    gesture_subscriber.unregister();
+        #map touch location to closest shape drawn
+        [shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(gestureLocation);
+              
+        if(shapeType_code == -1):
+            print('Touch not inside the display area');
+        elif(shapeID == -1):
+            print('Ignoring touch because not on valid shape');
+        else:
+        
+            if(not shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code)):#no more space
+                print('Can\'t fit anymore letters on the screen');
+            else:
+                touch_subscriber.unregister(); #TODO unregister regardless of outcome, and re-subscribe if 'bad' click
+                gesture_subscriber.unregister();     
                 
-                    print('Shape selected as best: '+shapeType+str(shapeID))
-                    feedbackMessage = String();
-                    feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
-                    pub_feedback.publish(feedbackMessage);
-                    feedbackManager(feedbackMessage);
+                shapeType = currentWord[shapeType_code];
+                print('Shape selected as best: '+shapeType+str(shapeID))
+                feedbackMessage = String();
+                feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
+                pub_feedback.publish(feedbackMessage);
+                feedbackManager(feedbackMessage);
                     
-            except ValueError:    #@todo map to closest shape if appropriate
-                print('Ignoring touch because it wasn''t on a valid shape');    
         prevTouchTime = touchTime;
     else:
         print('Ignoring touch because it was too close to the one before');
         
 def wordMessageManager(message):
-    global shapeLearners, settings_shapeLearners, shapesDrawn, currentWord, wordsLearnt #@todo make class attributes
+    global shapeLearners, settings_shapeLearners, currentWord, wordsLearnt #@todo make class attributes
     
     wordToLearn = message.data;
     currentWord = wordToLearn;
@@ -664,9 +563,6 @@ def wordMessageManager(message):
         
     #clear screen
     pub_clear.publish(Empty());
-
-    #initialise shapes on screen
-    shapesDrawn = numpy.ones((3,5,2))*numpy.NaN; #3rd dim: shapeType_code, ID
     
     [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(currentWord); 
     startShapeLearners(currentWord);
@@ -677,15 +573,19 @@ def testManager(message):
 
 def stopManager(message):
     if(naoSpeaking):
-        textToSpeech.say('Thank you for your help.');         
-
+        textToSpeech.say('Thank you for your help.');       
+          
+def clearScreenManager(message):
+    print('Clearing display');
+    shapeDisplayManager.clearAllShapes();
+    
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
 wordsLearnt = [];
 shapeLearners = [];
 currentWord = [];
 settings_shapeLearners = [];
-shapesDrawn = None;
+
 shapeFinished = False;
 if __name__ == "__main__":
     #parse arguments
@@ -709,11 +609,17 @@ if __name__ == "__main__":
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
     
+    #listen for request to clear screen (from tablet)
+    clear_subscriber = rospy.Subscriber(CLEAR_SCREEN_TOPIC, Empty, clearScreenManager);
+    
     #listen for test time
     test_subscriber = rospy.Subscriber(TEST_TOPIC, Empty, testManager);
     
     #listen for when to stop
     stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
+        
+    #initialise display manager for shapes (manages positioning of shapes)
+    shapeDisplayManager = ShapeDisplayManager();
         
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
