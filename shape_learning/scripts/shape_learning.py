@@ -27,7 +27,7 @@ from std_msgs.msg import String, Empty
 NAO_IP = '192.168.1.10';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
 naoConnected = False;
-naoSpeaking = True;
+naoSpeaking = False;
 naoWriting = False;
 effector   = "RArm" #LArm or RArm
 
@@ -35,7 +35,7 @@ effector   = "RArm" #LArm or RArm
 numPrincipleComponents = 10; #Number of principle components to keep during PCA of dataset
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
 boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again @TODO should be relative to parameter sensitivity
-numItersBeforeConsideredStuck = 5; #After how long should we consider that the user is stuck in a sub-optimal convergence?
+numItersBeforeConsideredStuck = 1; #After how long should we consider that the user is stuck in a sub-optimal convergence?
 class LearningModes(Enum):
     alwaysGood = 0;
     startsBad = 1;
@@ -74,6 +74,8 @@ numDesiredShapePoints = 15.0;#Number of points to downsample the length of shape
 
 #tablet parameters
 tabletConnected = True;      #If true, will wait for shape_finished notification before proceeding to the next shape (rather than a fixed delay)
+minTimeBetweenTouches = 0.1  #Seconds allowed between touches for the second one to be considered
+
 TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 WORDS_TOPIC = 'words_to_write';
@@ -242,7 +244,7 @@ def make_traj_msg(shape, shapeCentre, headerString):
 ###--------------------------------------------- WORD LEARNING FUNCTIONS
 # @todo make methods of a class
 
-def generateSettings(shapeType, learningMode):
+def generateSettings(shapeType):
     paramToVary = 2;            #Natural number between 1 and numPrincipleComponents, representing which principle component to vary from the template
     initialBounds_stdDevMultiples = [-6, 6];  #Starting bounds for paramToVary, as multiples of the parameter's observed standard deviation in the dataset
     doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
@@ -360,9 +362,10 @@ def lookAndAskForFeedback(toSay):
         nao.look_at([0.3,-0.1,0.5,"base_link"]);
     else:                   #person will be on our left
         nao.look_at([0.3,0.1,0.5,"base_link"]);  
-
-    textToSpeech.say(toSay);
-    print('NAO: '+toSay);
+        
+    if(naoSpeaking):
+        textToSpeech.say(toSay);
+        print('NAO: '+toSay);
 
 def relax():    
     pNames = "LArm"
@@ -499,7 +502,7 @@ def feedbackManager(stringReceived):
                 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
 
             [numItersConverged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
-            
+            print('converged for ' + str(numItersConverged));
             
             centre = publishShapeAndWaitForFeedback(newShape, shape_messageFor, settings_shapeLearners[shapeIndex_messageFor].paramToVary, newParamValue);
             if(simulatedFeedback):
@@ -523,12 +526,19 @@ def feedbackManager(stringReceived):
             if(numItersConverged>0):
                 print("I can\'t make anymore different shapes");
                 
-            if(numItersConverged > numItersBeforeConsideredStuck):
+            if(numItersConverged >= numItersBeforeConsideredStuck):
                 print("I think I'm stuck...");
-                if(naoConnected):
+                if(naoSpeaking):
                     textToSpeech.say("I\'m not sure I understand. Let\'s try again.");
-                currentBounds = shapeLearners[shapeIndex_messageFor].getBounds;
-                shapeLearners[shapeIndex_messageFor].setBounds(currentBounds*2); #increase bounds to hopefully get un-stuck
+                currentBounds = shapeLearners[shapeIndex_messageFor].getParameterBounds();
+               
+                #change bounds back to the initial ones to hopefully get un-stuck
+                [settings, datasetFile, initialBounds_stdDevMultiples] = generateSettings(shape_messageFor); 
+                parameterVariances = shapeLearners[shapeIndex_messageFor].shapeModeler.getParameterVariances();
+
+                newBounds = numpy.array(initialBounds_stdDevMultiples)*parameterVariances[settings.paramToVary-1];  
+                shapeLearners[shapeIndex_messageFor].setParameterBounds(newBounds);
+                print('Changing bounds from '+str(currentBounds)+' to '+str(newBounds));
             else:
                 if(naoConnected):
                     lookAndAskForFeedback("How about now?");
