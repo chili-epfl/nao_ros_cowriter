@@ -13,6 +13,8 @@ import math
 import pdb
 import matplotlib.pyplot as plt
 import time
+from enum import Enum 
+
 from shape_modeler import ShapeModeler
 from shape_learner import ShapeLearner
 
@@ -33,6 +35,22 @@ numPrincipleComponents = 10; #Number of principle components to keep during PCA 
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
 boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again @TODO should be relative to parameter sensitivity
 numItersBeforeConsideredStuck = 5; #After how long should we consider that the user is stuck in a sub-optimal convergence?
+class LearningModes(Enum):
+    alwaysGood = 0;
+    startsBad = 1;
+    alwaysBad = 2;
+    startsRandom = 3;
+#define the learning mode for each shape we expect to see
+learningModes = {'c': LearningModes.startsRandom,
+                'e': LearningModes.startsRandom,
+                'm': LearningModes.startsRandom,
+                'n': LearningModes.startsRandom,
+                'o': LearningModes.startsRandom,
+                's': LearningModes.startsRandom,
+                'u': LearningModes.startsRandom,
+                'w': LearningModes.startsRandom}; 
+
+
 #trajectory publishing parameters
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
@@ -236,6 +254,18 @@ def generateSettings(shapeType, learningMode):
         paramToVary = 4;
         initialBounds_stdDevMultiples = [-10, 10];
         datasetFile = '../res/c_dataset.txt';
+        
+        if(learningModes[shapeType] == LearningModes.startsRandom):
+            initialBounds_stdDevMultiples = [-10, 10];
+        elif(learningModes[shapeType] == LearningModes.alwaysGood):
+            initialBounds_stdDevMultiples = [-4, -3];
+            initialParamValue = -0.5;
+        elif(learningModes[shapeType] == LearningModes.alwaysBad):
+            initialBounds_stdDevMultiples = [1.5, 10];
+            initialParamValue = 0.5;
+        elif(learningModes[shapeType] == LearningModes.startsBad):
+            initialBounds_stdDevMultiples = [-10, 10];
+            initialParamValue = 0.5; 
     elif shapeType == 'd':
         datasetFile = '../res/d_cursive_dataset.txt';
     elif shapeType == 'e':
