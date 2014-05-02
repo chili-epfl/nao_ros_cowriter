@@ -67,18 +67,19 @@ else:
     t0 = 0.05;
     dt = 0.1;
     delayBeforeExecuting = 3.5;
-sizeScale_height = 0.035;           #Desired height of shape (metres)
-sizeScale_width = 0.023;           #Desired width of shape (metres)
+sizeScale_height = 0.035;    #Desired height of shape (metres)
+sizeScale_width = 0.023;     #Desired width of shape (metres)
 numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to (not guaranteed)
 
 #tablet parameters
-tabletConnected = True;     #If true, will wait for shape_finished notification before proceeding to the next shape (rather than a fixed delay)
+tabletConnected = True;      #If true, will wait for shape_finished notification before proceeding to the next shape (rather than a fixed delay)
 TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 WORDS_TOPIC = 'words_to_write';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
 GESTURE_TOPIC = 'long_touch_info'; #topic for location of 'shape good enough' gesture
-
+TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
+STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
@@ -623,7 +624,14 @@ def wordMessageManager(message):
     
     [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(currentWord); 
     startShapeLearners(currentWord);
-        
+
+def testManager(message):
+    if(naoSpeaking):
+        textToSpeech.say('Ok, test time. I\'ll try my best.');
+
+def stopManager(message):
+    if(naoSpeaking):
+        textToSpeech.say('Thank you for your help.');         
 
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
@@ -661,6 +669,12 @@ if __name__ == "__main__":
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
     
+    #listen for test time
+    test_subscriber = rospy.Subscriber(TEST_TOPIC, Empty, testManager);
+    
+    #listen for when to stop
+    stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
+        
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
         #start speech (ROS isn't working..)
