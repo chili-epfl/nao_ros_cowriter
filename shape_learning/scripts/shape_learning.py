@@ -27,6 +27,7 @@ from std_msgs.msg import String, Empty
 NAO_IP = '192.168.1.10';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
 naoConnected = False;
+naoSpeaking = True;
 naoWriting = False;
 effector   = "RArm" #LArm or RArm
 
@@ -356,9 +357,9 @@ def lookAndAskForFeedback(toSay):
         nao.execute([naoqi_request("motion","angleInterpolationWithSpeed",["RArm",joints_standInit,0.2])])
     
     if(effector=="RArm"):   #person will be on our right
-        nao.look_at([0.1,-0.1,0.5,"base_link"]);
+        nao.look_at([0.3,-0.1,0.5,"base_link"]);
     else:                   #person will be on our left
-        nao.look_at([0.1,0.1,0.5,"base_link"]);  
+        nao.look_at([0.3,0.1,0.5,"base_link"]);  
 
     textToSpeech.say(toSay);
     print('NAO: '+toSay);
@@ -542,76 +543,93 @@ def feedbackManager(stringReceived):
         gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, gestureManager);
     else:
         print('Skipping message because it is not for a known shape');
-        
+
+prevTouchTime = 0;   
 def touchInfoManager(pointStamped):
-    global touch_subscriber, gesture_subscriber 
-    touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
-    if(shapesDrawn is None):
-        print('Ignoring touch because no shapes have been drawn');
-    else:
-        #map touch location to closest shape drawn
-        touchCell = (touchLocation - shapeSize/2)/shapeSize;
-    
-        numRows = shapesDrawn.shape[0];
-        row = (numRows -1)- int(round(touchCell[1]));
-        col = int(round(touchCell[0]));
+    global touch_subscriber, gesture_subscriber, prevTouchTime
+    touchTime = pointStamped.header.stamp.to_sec();
+    if((touchTime - prevTouchTime)>minTimeBetweenTouches):
+        touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
+        if(shapesDrawn is None):
+            print('Ignoring touch because no shapes have been drawn');
+        else:
+            #map touch location to closest shape drawn
+            touchCell = (touchLocation - shapeSize/2)/shapeSize;
         
-        try:
-            shapeType_code = shapesDrawn[row,col,0];
-            shapeType = currentWord[int(shapeType_code)];
-            numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-            shapeID = int(shapesDrawn[row,col,1]);
+            numRows = shapesDrawn.shape[0];
+            row = (numRows -1)- int(round(touchCell[1]));
+            col = int(round(touchCell[0]));
             
-            if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
-                print('Ignoring touch because it wasn''t on a valid shape');
+            try:
+                shapeType_code = shapesDrawn[row,col,0];
+                shapeType = currentWord[int(shapeType_code)];
+                numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+                shapeID = int(shapesDrawn[row,col,1]);
+                
+                
+                if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
+                    print('Ignoring touch because it wasn''t on a valid shape');
 
-            elif(not isAvailablePositionToDrawAt(shapeType)):#no more space
-                print('Can''t fit anymore letters on the screen');
-            else:
-                touch_subscriber.unregister();
-                gesture_subscriber.unregister(); 
+                elif(not isAvailablePositionToDrawAt(shapeType)):#no more space
+                    print('Can''t fit anymore letters on the screen');
+                else:
+                    touch_subscriber.unregister();
+                    gesture_subscriber.unregister();
                 
-                print('Shape touched: '+shapeType+str(shapeID))
-                feedbackMessage = String();
-                feedbackMessage.data = shapeType + '_' + str(shapeID);
-                pub_feedback.publish(feedbackMessage);
+                    print('Shape touched: '+shapeType+str(shapeID))
+                    feedbackMessage = String();
+                    feedbackMessage.data = shapeType + '_' + str(shapeID);
+                    pub_feedback.publish(feedbackMessage);
+                    feedbackManager(feedbackMessage);
                 
-        except ValueError:    #@todo map to closest shape if appropriate
-            print('Ignoring touch because it wasn''t on a valid shape');
-        
+            
+            except ValueError:    #@todo map to closest shape if appropriate
+                print('Ignoring touch because it wasn''t on a valid shape');
+        prevTouchTime = touchTime;
+    else:
+        print('Ignoring touch because it was too close to the one before');
+            
 def gestureManager(pointStamped):
-    global touch_subscriber, gesture_subscriber  
-    gestureLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
-    if(shapesDrawn is None):
-        print('Ignoring touch because no shapes have been drawn');
-    else:
-        #map touch location to closest shape drawn
-        touchCell = (gestureLocation - shapeSize/2)/shapeSize;
-        numRows = shapesDrawn.shape[0];
-        row = (numRows -1)- int(round(touchCell[1]));
-        col = int(round(touchCell[0]));
-        
-        try:
-            shapeType_code = shapesDrawn[row,col,0];
-            shapeType = currentWord[int(shapeType_code)];
-            numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
-            shapeID = int(shapesDrawn[row,col,1]);
-            
-            if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
-                print('Ignoring touch because it wasn''t on a valid shape');
+    global touch_subscriber, gesture_subscriber, prevTouchTime
 
-            else:
-                touch_subscriber.unregister();
-                gesture_subscriber.unregister(); 
+    touchTime = pointStamped.header.stamp.to_sec(); 
+    if((touchTime - prevTouchTime)>minTimeBetweenTouches):
+        gestureLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
+        if(shapesDrawn is None):
+            print('Ignoring touch because no shapes have been drawn');
+        else:
+            #map touch location to closest shape drawn
+            touchCell = (gestureLocation - shapeSize/2)/shapeSize;
+            numRows = shapesDrawn.shape[0];
+            row = (numRows -1)- int(round(touchCell[1]));
+            col = int(round(touchCell[0]));
+            
+            try:
+                shapeType_code = shapesDrawn[row,col,0];
+                shapeType = currentWord[int(shapeType_code)];
+                numShapes_shapeType = numpy.equal(shapesDrawn[:,:,0],shapeType_code).sum();
+                shapeID = int(shapesDrawn[row,col,1]);
                 
-                print('Shape selected as best: '+shapeType+str(shapeID))
-                feedbackMessage = String();
-                feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
-                pub_feedback.publish(feedbackMessage);
+                if(shapeID > (numShapes_shapeType-1)): #touched where shape wasn't (wouldn't make it this far anyway)
+                    print('Ignoring touch because it wasn''t on a valid shape');
+
+                else:
+                    
+                    touch_subscriber.unregister();
+                    gesture_subscriber.unregister();
                 
-        except ValueError:    #@todo map to closest shape if appropriate
-            print('Ignoring touch because it wasn''t on a valid shape');    
-   
+                    print('Shape selected as best: '+shapeType+str(shapeID))
+                    feedbackMessage = String();
+                    feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
+                    pub_feedback.publish(feedbackMessage);
+                    feedbackManager(feedbackMessage);
+                    
+            except ValueError:    #@todo map to closest shape if appropriate
+                print('Ignoring touch because it wasn''t on a valid shape');    
+        prevTouchTime = touchTime;
+    else:
+        print('Ignoring touch because it was too close to the one before');
+        
 def wordMessageManager(message):
     global shapeLearners, settings_shapeLearners, shapesDrawn, currentWord, wordsLearnt #@todo make class attributes
     
