@@ -694,7 +694,7 @@ if __name__ == "__main__":
     rospy.sleep(1.0); #maybe this helps the tablet not miss the first one?
         
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
-    feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
+    #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
 
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
