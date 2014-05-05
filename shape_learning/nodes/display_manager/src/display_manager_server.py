@@ -2,6 +2,12 @@
 
 from display_manager.srv import *
 import rospy
+
+#add path to the shape_display_manager file to include path
+import os, sys
+lib_path = os.path.abspath('../include')
+sys.path.append(lib_path)
+
 from shape_display_manager import ShapeDisplayManager
 
 def handle_clear_all_shapes(request):
