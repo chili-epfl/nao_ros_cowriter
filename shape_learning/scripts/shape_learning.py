@@ -33,7 +33,6 @@ naoWriting = False;
 effector   = "RArm" #LArm or RArm
 
 #shape learning parameters
-numPrincipleComponents = 10; #Number of principle components to keep during PCA of dataset
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
 boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again @TODO should be relative to parameter sensitivity
 numItersBeforeConsideredStuck = 1; #After how long should we consider that the user is stuck in a sub-optimal convergence?
@@ -164,6 +163,7 @@ def generateSettings(shapeType):
     initialBounds_stdDevMultiples = [-6, 6];  #Starting bounds for paramToVary, as multiples of the parameter's observed standard deviation in the dataset
     doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
     initialParamValue = numpy.NaN;
+    initialBounds = [numpy.NaN, numpy.NaN];
     
     if shapeType == 'a':
         paramToVary = 6;
@@ -221,9 +221,11 @@ def generateSettings(shapeType):
     else:
         raise RuntimeError("Dataset is not known for shape "+ shapeType);
     settings = ShapeLearner.SettingsStruct(shape_learning = shapeType,
-    paramToVary = paramToVary, doGroupwiseComparison = True, initialBounds = [], 
+    paramToVary = paramToVary, doGroupwiseComparison = True, 
+    datasetFile = datasetFile, initialBounds = initialBounds, 
+    initialBounds_stdDevMultiples = initialBounds_stdDevMultiples,
     initialParamValue = initialParamValue, minParamDiff = 0.4);
-    return settings, datasetFile, initialBounds_stdDevMultiples
+    return settings
     
 def initialiseShapeLearners(wordToLearn):
     global shapesLearnt, shapeLearners, settings_shapeLearners
@@ -238,18 +240,9 @@ def initialiseShapeLearners(wordToLearn):
             newShape = True;
         
         if(newShape):
-            [settings, datasetFile, initialBounds_stdDevMultiples] = generateSettings(shapeType); 
+            settings = generateSettings(shapeType); 
 
-            #analyse database of shapes
-            shapeModeler = ShapeModeler();
-            shapeModeler.makeDataMatrix(datasetFile);
-            shapeModeler.performPCA(numPrincipleComponents);
-            
-            #learn parameter of shape
-            parameterVariances = shapeModeler.getParameterVariances();
-            settings.initialBounds = numpy.array(initialBounds_stdDevMultiples)*parameterVariances[settings.paramToVary-1];  
-            
-            shapeLearner = ShapeLearner(shapeModeler,settings);
+            shapeLearner = ShapeLearner(settings);
             shapesLearnt.append(shapeType);
             shapeLearners.append(shapeLearner);
             settings_shapeLearners.append(settings);
@@ -259,7 +252,7 @@ def initialiseShapeLearners(wordToLearn):
             newInitialBounds = previousBounds;
             newInitialBounds[0] -= boundExpandingAmount;
             newInitialBounds[1] += boundExpandingAmount;
-            settings_shapeLearners[shapeType_index].initialBounds = newInitialBounds;
+            shapeLearners[shapeIndex_messageFor].setParameterBounds(newInitialBounds);
     return shapeLearners, settings_shapeLearners;
     
 def lookAtShape(traj):
@@ -312,7 +305,7 @@ def startShapeLearners(wordToLearn):
         shapeType = wordToLearn[i];
         print('Sending '+shapeType);
         shape_index = shapesLearnt.index(shapeType);
-        [shape, paramValue] = shapeLearners[shape_index].startLearning(settings_shapeLearners[shape_index].initialBounds);
+        [shape, paramValue] = shapeLearners[shape_index].startLearning();
         
         centre = publishShapeAndWaitForFeedback(shape,shapeType, settings_shapeLearners[shape_index].paramToVary, paramValue);
         if(simulatedFeedback): #pretend first one isn't good enough
@@ -452,10 +445,7 @@ def feedbackManager(stringReceived):
                 currentBounds = shapeLearners[shapeIndex_messageFor].getParameterBounds();
                
                 #change bounds back to the initial ones to hopefully get un-stuck
-                [settings, datasetFile, initialBounds_stdDevMultiples] = generateSettings(shape_messageFor); 
-                parameterVariances = shapeLearners[shapeIndex_messageFor].shapeModeler.getParameterVariances();
-
-                newBounds = numpy.array(initialBounds_stdDevMultiples)*parameterVariances[settings.paramToVary-1];  
+                newBounds = settings_shapeLearners[shapeIndex_messageFor].initialBounds;
                 shapeLearners[shapeIndex_messageFor].setParameterBounds(newBounds);
                 print('Changing bounds from '+str(currentBounds)+' to '+str(newBounds));
             else:

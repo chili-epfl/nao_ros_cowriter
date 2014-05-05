@@ -10,8 +10,9 @@ import numpy
 from shape_modeler import ShapeModeler
 
 #shape learning parameters
-maxNumAttempts = 1000;      #Allowed attempts to draw a new shape which is significantly different to the previous one but still within the range (just a precaution; sampling should be theoretically possible)
+maxNumAttempts = 10000;      #Allowed attempts to draw a new shape which is significantly different to the previous one but still within the range (just a precaution; sampling should be theoretically possible)
 tol = 1e-2;                 #Tolerance on convergence test
+numPrincipleComponents = 10; #Number of principle components to keep during PCA of dataset
 
 
 from recordtype import recordtype #for mutable namedtuple (dict might also work)
@@ -19,30 +20,45 @@ from recordtype import recordtype #for mutable namedtuple (dict might also work)
 class ShapeLearner:
     SettingsStruct = recordtype('SettingsStruct', 
     ['shape_learning',  #String representing the shape which the object is learning
+    'datasetFile',      #Path to the dataset file which will be passed to the ShapeModeler
     'paramToVary',      #Natural number between 1 and number of parameters in the associated ShapeModeler, representing the parameter to learn
     'doGroupwiseComparison', #instead of pairwise comparison with most recent two shapes 
-    'initialBounds',    #Initial acceptable parameter range
+    'initialBounds',    #Initial acceptable parameter range (if a value is NaN, the initialBounds_stdDevMultiples setting will be used to set that value)
+    'initialBounds_stdDevMultiples', #Initial acceptable parameter range in terms of the standard deviation of the parameter
     'initialParamValue',#Initial parameter value (NaN if to be drawn uniformly from initialBounds)
     'minParamDiff']);   #How different two shapes' parameters need to be to be published for comparison
     #@todo: make groupwise comparison/pairwise comparison different implementations of shapeLearner class
 
-    def __init__(self, shapeModeler, settings):
+    def __init__(self, settings):
+        
+        #assign a ShapeModeler to use
+        shapeModeler = ShapeModeler();
+        shapeModeler.makeDataMatrix(settings.datasetFile);
+        shapeModeler.performPCA(numPrincipleComponents);
         self.shapeModeler = shapeModeler;
+        
+        self.bounds = settings.initialBounds;
+        if(numpy.isnan(settings.initialBounds[0]) or numpy.isnan(settings.initialBounds[1])): #want to set initial bounds as std. dev. multiple
+            parameterVariances = shapeModeler.getParameterVariances();
+            boundsFromStdDevMultiples = numpy.array(settings.initialBounds_stdDevMultiples)*parameterVariances[settings.paramToVary-1];  
+            
+            if(numpy.isnan(settings.initialBounds[0])):
+                self.bounds[0] = boundsFromStdDevMultiples[0];
+            if(numpy.isnan(settings.initialBounds[1])):
+                self.bounds[1] = boundsFromStdDevMultiples[1];
+                
         self.doGroupwiseComparison = settings.doGroupwiseComparison;
         self.shape_learning = settings.shape_learning;
         self.paramToVary = settings.paramToVary;
         self.minParamDiff = settings.minParamDiff;
         self.initialParamValue = settings.initialParamValue;
-        
-        self.bounds = settings.initialBounds;
+
         self.converged = False;
         self.numIters = 0;
         self.numItersConverged = 0;
         
 ### ----------------------------------------------------- START LEARNING
-    def startLearning(self, startingBounds):
-        self.bounds = startingBounds;
-        
+    def startLearning(self):
         #make initial shape
         if(numpy.isnan(self.initialParamValue)):
             [shape, paramValue] = self.shapeModeler.makeRandomShapeFromUniform(self.paramToVary, self.bounds);
