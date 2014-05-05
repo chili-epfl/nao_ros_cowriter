@@ -3,8 +3,8 @@
 """
 Publishes shapes specified in 'word' argument on the /shapes_to_draw 
 topic and adapts them based on feedback received on the /shape_feedback 
-topic. Feedback messages should be formatted as shapeName_bestShapeIndex
-eg. 'a_2'.
+topic. Feedback messages should be formatted as shapeTypeIndex_bestShapeIndex
+eg. '0_2' for the first letter's 3rd version being the best.
 """
 
 
@@ -15,9 +15,9 @@ import matplotlib.pyplot as plt
 import time
 from enum import Enum 
 
-from shape_modeler import ShapeModeler
-from shape_learner import ShapeLearner
-#from shape_display_manager import ShapeDisplayManager
+from shape_learner_manager import ShapeLearnerManager
+from shape_learner import ShapeLearner #for SettingsStruct
+from shape_modeler import ShapeModeler #for normaliseShapeHeight()
 
 import rospy
 from nav_msgs.msg import Path
@@ -155,8 +155,7 @@ def make_traj_msg(shape, shapeCentre, headerString):
 ###
             
          
-###--------------------------------------------- WORD LEARNING FUNCTIONS
-# @todo make methods of a class
+###---------------------------------------------- WORD LEARNING SETTINGS
 
 def generateSettings(shapeType):
     paramToVary = 2;            #Natural number between 1 and numPrincipleComponents, representing which principle component to vary from the template
@@ -227,34 +226,6 @@ def generateSettings(shapeType):
     initialParamValue = initialParamValue, minParamDiff = 0.4);
     return settings
     
-def initialiseShapeLearners(wordToLearn):
-    global shapesLearnt, shapeLearners, settings_shapeLearners
-    for i in range(len(wordToLearn)):
-        shapeType = wordToLearn[i];
-        
-        #check if shape has been learnt before
-        try:
-            shapeType_index = shapesLearnt.index(shapeType);
-            newShape = False;
-        except ValueError: 
-            newShape = True;
-        
-        if(newShape):
-            settings = generateSettings(shapeType); 
-
-            shapeLearner = ShapeLearner(settings);
-            shapesLearnt.append(shapeType);
-            shapeLearners.append(shapeLearner);
-            settings_shapeLearners.append(settings);
-        else:
-            #use the bounds determined last time
-            previousBounds = shapeLearners[shapeType_index].getParameterBounds();
-            newInitialBounds = previousBounds;
-            newInitialBounds[0] -= boundExpandingAmount;
-            newInitialBounds[1] += boundExpandingAmount;
-            shapeLearners[shapeIndex_messageFor].setParameterBounds(newInitialBounds);
-    return shapeLearners, settings_shapeLearners;
-    
 def lookAtShape(traj):
     trajStartPosition = traj.poses[0].pose.position;
     trajStartPosition_robot = tl.transformPose("base_footprint",target)
@@ -290,48 +261,7 @@ def relax():
 def onShapeFinished(message):
     global shapeFinished;
     shapeFinished = True;
-        
-def startShapeLearners(wordToLearn):
-    global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished
-    centre = [];
-    if(naoConnected):
-        #nao.setpose("StandInit")
-        #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
-        #rospy.sleep(0.3);
-        pass
-        
-    #start learning        
-    for i in range(len(wordToLearn)):
-        shapeType = wordToLearn[i];
-        print('Sending '+shapeType);
-        shape_index = shapesLearnt.index(shapeType);
-        [shape, paramValue] = shapeLearners[shape_index].startLearning();
-        
-        centre = publishShapeAndWaitForFeedback(shape,shapeType, settings_shapeLearners[shape_index].paramToVary, paramValue);
-        if(simulatedFeedback): #pretend first one isn't good enough
-            publishSimulatedFeedback(0,shapeType,settings_shapeLearners[shape_index].doGroupwiseComparison); 
-
-        elif(not tabletConnected):
-            rospy.sleep(10);
-            print('Shape finished');
-        else:
-            rospy.sleep(0.1);
-            #listen for notification that the letter is finished
-            shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
-            while(not shapeFinished):
-                rospy.sleep(0.1);
-            shape_finished_subscriber.unregister();
-            shapeFinished = False;
-            print('Shape finished.');
-            
-    if(naoConnected):
-        lookAndAskForFeedback("What do you think?");
-        rospy.sleep(0.7);
-        nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-        nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
-    
-     
-        
+               
 ### ----------------------------------------- PUBLISH SIMULATED FEEDBACK    
 def publishSimulatedFeedback(bestShape_index, shapeType, doGroupwiseComparison):           
         feedback = String();
@@ -343,7 +273,7 @@ def publishSimulatedFeedback(bestShape_index, shapeType, doGroupwiseComparison):
         feedbackManager(feedback);
         
 ### ------------------------------------------------------ PUBLISH SHAPE        
-def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
+def publishShapeAndWaitForFeedback(shape, shapeType, shapeType_code, param, paramValue):
     trajStartPosition = Point();
     if(simulatedFeedback):
         if(args.show):
@@ -351,14 +281,11 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
             ShapeModeler.normaliseAndShowShape(shape);
             time.sleep(1.3); 
     else:
-        
-        shapeType_code = currentWord.index(shapeType);
-        
+       
         try:
             display_new_shape = rospy.ServiceProxy('display_new_shape', displayNewShape);
             response = display_new_shape(shape_type_code = shapeType_code);
             shapeCentre = numpy.array([response.location.x, response.location.y]);
-            #print( response.location);
         except rospy.ServiceException, e:
             print "Service call failed: %s"%e
         
@@ -374,35 +301,40 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
 def feedbackManager(stringReceived):
     global shapeFinished #todo: make class attribute
     
+    #convert feedback string into settings
     feedback = stringReceived.data.split('_');
-    feedbackData = feedback[1];
-    bestShape_index = int(feedbackData);
-    
+    processMessage = True;
     try:
         shapeIndex_messageFor = int(feedback[0]);
-        shape_messageFor = currentWord[shapeIndex_messageFor];
-        processMessage = True;
-    except ValueError: #unknown shape
-        print('Unknown shape with index ' + feedback[0]);
+    except:
+        print('Shape type index must be an integer. Received ' + feedback[0]);
+        processMessage = False;
+        
+    try:
+        bestShape_index = int(feedback[1]);
+    except:
+        print('Best shape index must be an integer. Received ' + feedback[0]);
         processMessage = False;
     
     noNewShape = False; #usually make a new shape based on feedback
-    
     if(len(feedback)>2): 
         feedbackMessage = feedback[2];
         if(feedbackMessage == 'noNewShape'):
             noNewShape = True;
         else:
             processMessage = False;
-            print('Unknown message received in feedback string');   
-         
+            print('Unknown message received in feedback string: '+feedbackMessage);   
+                
     if(processMessage):    
         if(noNewShape): #just respond to feedback, don't make new shape 
             if(naoConnected):
                 toSay = 'Ok, thanks for helping me';
                 print('NAO: '+toSay);
                 textToSpeech.say(toSay); 
-            shapeLearners[shapeIndex_messageFor].respondToFeedback(bestShape_index);
+            #pass feedback to shape manager
+            response = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
+            if(response == -1):
+                print('Something\'s gone wrong');
             
         else:
             if(naoConnected):
@@ -413,13 +345,14 @@ def feedbackManager(stringReceived):
                 rospy.sleep(0.4);
                 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
             
-            [numItersConverged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
+            [numItersConverged, newShape, shapeType, shapeType_code, param, paramValue] = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
+            
             print('converged for ' + str(numItersConverged));
             
-            centre = publishShapeAndWaitForFeedback(newShape, shape_messageFor, settings_shapeLearners[shapeIndex_messageFor].paramToVary, newParamValue);
+            centre = publishShapeAndWaitForFeedback(newShape, shapeType, shapeType_code, param, paramValue);
             if(simulatedFeedback):
-                bestShape_index = shapeLearners[shapeIndex_messageFor].generateSimulatedFeedback(newShape, newParamValue);
-                publishSimulatedFeedback(bestShape_index, shape_messageFor,settings_shapeLearners[shapeIndex_messageFor].doGroupwiseComparison);
+                bestShape_index = wordLearners.generateSimulatedFeedback(shapeIndex_messageFor, newShape, newParamValue);
+                publishSimulatedFeedback(bestShape_index, shape_messageFor,True);
 
             elif(not tabletConnected):
                 rospy.sleep(10);
@@ -442,41 +375,28 @@ def feedbackManager(stringReceived):
                 print("I think I'm stuck...");
                 if(naoSpeaking):
                     textToSpeech.say("I\'m not sure I understand. Let\'s try again.");
-                currentBounds = shapeLearners[shapeIndex_messageFor].getParameterBounds();
-               
+                
                 #change bounds back to the initial ones to hopefully get un-stuck
-                newBounds = settings_shapeLearners[shapeIndex_messageFor].initialBounds;
-                shapeLearners[shapeIndex_messageFor].setParameterBounds(newBounds);
-                print('Changing bounds from '+str(currentBounds)+' to '+str(newBounds));
+                wordManager.resetParameterBounds(shapeIndex_messageFor);
+                
             else:
                 if(naoConnected):
                     lookAndAskForFeedback("How about now?");
                     rospy.sleep(0.7);
                     nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
                     nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
-    else:
-        print('Skipping message because it is not for a known shape');
-
 
         
 def wordMessageManager(message):
-    global shapeLearners, settings_shapeLearners, currentWord, wordsLearnt #@todo make class attributes
+    global shapeFinished#@todo make class attribute 
     
     wordToLearn = message.data;
-    currentWord = wordToLearn;
-    
-    try:
-        word_index = wordsLearnt.index(currentWord);
-        wordSeenBefore = True;
-    except ValueError: 
-        wordSeenBefore = False;
-        wordsLearnt.append(currentWord);
-   
+    wordSeenBefore = wordManager.newCollection(wordToLearn);
     if(naoConnected):
         if(wordSeenBefore):
-            toSay = currentWord+' again, ok.';
+            toSay = wordToLearn+' again, ok.';
         else:
-            toSay = currentWord+', alright.';
+            toSay = wordToLearn+', alright.';
     
         print('NAO: '+toSay);
         textToSpeech.say(toSay);    
@@ -484,8 +404,33 @@ def wordMessageManager(message):
     #clear screen
     pub_clear.publish(Empty());
     
-    [shapeLearners, settings_shapeLearners] = initialiseShapeLearners(currentWord); 
-    startShapeLearners(currentWord);
+    #start learning        
+    for i in range(len(wordToLearn)):
+        [shape, shapeType, shapeType_code, paramToVary, paramValue] = wordManager.startNextShapeLearner();
+        print('Sending '+shapeType);
+        centre = publishShapeAndWaitForFeedback(shape, shapeType, shapeType_code, paramToVary, paramValue);
+        if(simulatedFeedback): #pretend first one isn't good enough
+            publishSimulatedFeedback(0,shapeType,True); 
+
+        elif(not tabletConnected):
+            rospy.sleep(10);
+            print('Shape finished');
+        else:
+            rospy.sleep(0.1);
+            #listen for notification that the letter is finished
+            shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
+            while(not shapeFinished):
+                rospy.sleep(0.1);
+            shape_finished_subscriber.unregister();
+            shapeFinished = False;
+            print('Shape finished.');
+            
+    if(naoConnected):
+        lookAndAskForFeedback("What do you think?");
+        rospy.sleep(0.7);
+        nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+        nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
+    
 
 def testManager(message):
     if(naoSpeaking):
@@ -564,6 +509,9 @@ if __name__ == "__main__":
             nao.setpose("StandInit");
             [temp,joints_standInit] = nao.execute([naoqi_request("motion","getAngles",["RArm",True])]);
             nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
+            
+    #initialise word manager (passes feedback to shape learners and keeps history of words learnt)
+    wordManager = ShapeLearnerManager(generateSettings);
             
     wordToLearn = args.word;
     if(wordToLearn is not None):
