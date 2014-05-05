@@ -17,7 +17,7 @@ from enum import Enum
 
 from shape_modeler import ShapeModeler
 from shape_learner import ShapeLearner
-from shape_display_manager import ShapeDisplayManager
+#from shape_display_manager import ShapeDisplayManager
 
 import rospy
 from nav_msgs.msg import Path
@@ -77,17 +77,14 @@ numDesiredShapePoints = 15.0;#Number of points to downsample the length of shape
 tabletConnected = True;      #If true, will wait for shape_finished notification before proceeding to the next shape (rather than a fixed delay)
 minTimeBetweenTouches = 0.1  #Seconds allowed between touches for the second one to be considered
 
-TOUCH_TOPIC = 'touch_info';
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 WORDS_TOPIC = 'words_to_write';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
-GESTURE_TOPIC = 'long_touch_info'; #topic for location of 'shape good enough' gesture
 TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
 STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
-pub_feedback = rospy.Publisher(FEEDBACK_TOPIC, String);
 
 phrases_askingForFeedback = {"Any better?","How about now?"};
 phrases_actingOnFeedback_drawAgain = {"Ok, I\'ll work on the ","The "};
@@ -302,7 +299,7 @@ def onShapeFinished(message):
     shapeFinished = True;
         
 def startShapeLearners(wordToLearn):
-    global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished, gesture_subscriber, touch_subscriber
+    global shapesLearnt, shapeLearners, settings_shapeLearners, shapeFinished
     centre = [];
     if(naoConnected):
         #nao.setpose("StandInit")
@@ -340,11 +337,6 @@ def startShapeLearners(wordToLearn):
         nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
         nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
     
-    #listen for touch events on the tablet
-    touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
-        
-    #listen for touch events on the tablet
-    gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, gestureManager); 
      
         
 ### ----------------------------------------- PUBLISH SIMULATED FEEDBACK    
@@ -377,7 +369,6 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
         except rospy.ServiceException, e:
             print "Service call failed: %s"%e
         
-        #shapeCentre = shapeDisplayManager.displayNewShape(shapeType_code);
         headerString = shapeType+'_'+str(param)+'_'+str(paramValue);
         traj = make_traj_msg(shape, shapeCentre, headerString);
         if(naoConnected):
@@ -388,18 +379,18 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
     return trajStartPosition
             
 def feedbackManager(stringReceived):
-    global shapeFinished, touch_subscriber, gesture_subscriber   #todo: make class attributes
+    global shapeFinished #todo: make class attribute
     
     feedback = stringReceived.data.split('_');
-    shape_messageFor = feedback[0];
     feedbackData = feedback[1];
     bestShape_index = int(feedbackData);
     
-    
     try:
-        shapeIndex_messageFor = shapesLearnt.index(shape_messageFor);
+        shapeIndex_messageFor = int(feedback[0]);
+        shape_messageFor = currentWord[shapeIndex_messageFor];
         processMessage = True;
-    except ValueError:
+    except ValueError: #unknown shape
+        print('Unknown shape with index ' + feedback[0]);
         processMessage = False;
     
     noNewShape = False; #usually make a new shape based on feedback
@@ -473,121 +464,10 @@ def feedbackManager(stringReceived):
                     rospy.sleep(0.7);
                     nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
                     nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
-               
-        #listen for touch events on the tablet
-        touch_subscriber = rospy.Subscriber(TOUCH_TOPIC, PointStamped, touchInfoManager);
-        
-        #listen for touch events on the tablet
-        gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, gestureManager);
     else:
         print('Skipping message because it is not for a known shape');
 
-prevTouchTime = 0;   
-def touchInfoManager(pointStamped):
-    global touch_subscriber, gesture_subscriber, prevTouchTime
-    touchTime = pointStamped.header.stamp.to_sec();
-    if((touchTime - prevTouchTime)>minTimeBetweenTouches):
-        touchLocation = [pointStamped.point.x, pointStamped.point.y];
-        
-        #map touch location to closest shape drawn
-        #[shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(touchLocation);
-        try:
-            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
-            request = shapeAtLocationRequest();
-            request.location.x = touchLocation[0];
-            request.location.y = touchLocation[1];
-            response = shape_at_location(request);
-            shapeType_code = response.shape_type_code;
-            shapeID = response.shape_id;
-            #print( response.location);
-        except rospy.ServiceException, e:
-            print "Service call failed: %s"%e
-        
-        
-        if(shapeType_code == -1):
-            print('Touch not inside the display area');
-        elif(shapeID == -1):
-            print('Ignoring touch because not on valid shape');
-        else:
-            #ableToDisplay = shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code);
-            try:
-                possible_to_display = rospy.ServiceProxy('possible_to_display_shape', isPossibleToDisplayNewShape);
-                response = possible_to_display(shape_type_code = shapeType_code);
-                ableToDisplay = response.is_possible.data;
-                #print( response.location);
-            except rospy.ServiceException, e:
-                ableToDisplay = False;
-                print "Service call failed: %s"%e
-            
-            if(not ableToDisplay):#no more space
-                print('Can\'t fit anymore letters on the screen');
-            else:
-                touch_subscriber.unregister(); #TODO unregister regardless of outcome, and re-subscribe if 'bad' click
-                gesture_subscriber.unregister();
-                              
-                shapeType = currentWord[shapeType_code];
-                print('Shape touched: '+shapeType+str(shapeID))  
-                feedbackMessage = String();
-                feedbackMessage.data = shapeType + '_' + str(shapeID);
-                pub_feedback.publish(feedbackMessage);
-                feedbackManager(feedbackMessage);
-                
-        prevTouchTime = touchTime;
-    else:
-        print('Ignoring touch because it was too close to the one before');
-            
-def gestureManager(pointStamped):
-    global touch_subscriber, gesture_subscriber, prevTouchTime
 
-    touchTime = pointStamped.header.stamp.to_sec(); 
-    if((touchTime - prevTouchTime)>minTimeBetweenTouches):
-        gestureLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
-
-        #map touch location to closest shape drawn
-        #[shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(gestureLocation);
-        try:
-            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
-            request = shapeAtLocationRequest();
-            request.location.x = gestureLocation[0];
-            request.location.y = gestureLocation[1];
-            response = shape_at_location(request);
-            shapeType_code = response.shape_type_code;
-            shapeID = response.shape_id;
-            #print( response.location);
-        except rospy.ServiceException, e:
-            print "Service call failed: %s"%e
-                  
-        if(shapeType_code == -1):
-            print('Touch not inside the display area');
-        elif(shapeID == -1):
-            print('Ignoring touch because not on valid shape');
-        else:
-            #ableToDisplay = shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code);
-            try:
-                possible_to_display = rospy.ServiceProxy('possible_to_display_shape', isPossibleToDisplayNewShape);
-                response = possible_to_display(shape_type_code = shapeType_code);
-                ableToDisplay = response.is_possible.data;
-                #print( response.location);
-            except rospy.ServiceException, e:
-                ableToDisplay = False;
-                print "Service call failed: %s"%e
-            
-            if(not ableToDisplay):#no more space
-                print('Can\'t fit anymore letters on the screen');
-            else:
-                touch_subscriber.unregister(); #TODO unregister regardless of outcome, and re-subscribe if 'bad' click
-                gesture_subscriber.unregister();     
-                
-                shapeType = currentWord[shapeType_code];
-                print('Shape selected as best: '+shapeType+str(shapeID))
-                feedbackMessage = String();
-                feedbackMessage.data = shapeType + '_' + str(shapeID) + '_noNewShape';
-                pub_feedback.publish(feedbackMessage);
-                feedbackManager(feedbackMessage);
-                    
-        prevTouchTime = touchTime;
-    else:
-        print('Ignoring touch because it was too close to the one before');
         
 def wordMessageManager(message):
     global shapeLearners, settings_shapeLearners, currentWord, wordsLearnt #@todo make class attributes
@@ -627,7 +507,6 @@ def stopManager(message):
           
 def clearScreenManager(message):
     print('Clearing display');
-    #shapeDisplayManager.clearAllShapes();
     try:
         clear_all_shapes = rospy.ServiceProxy('clear_all_shapes', clearAllShapes);
         resp1 = clear_all_shapes();
@@ -658,7 +537,7 @@ if __name__ == "__main__":
         plt.ion(); #to plot one shape at a time
          
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
-    #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
+    feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
 
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
@@ -673,7 +552,6 @@ if __name__ == "__main__":
     stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
         
     #initialise display manager for shapes (manages positioning of shapes)
-    #shapeDisplayManager = ShapeDisplayManager();
     from display_manager.srv import *
     rospy.wait_for_service('clear_all_shapes');
     
