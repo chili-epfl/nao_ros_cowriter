@@ -368,7 +368,16 @@ def publishShapeAndWaitForFeedback(shape, shapeType, param, paramValue):
     else:
         
         shapeType_code = currentWord.index(shapeType);
-        shapeCentre = shapeDisplayManager.displayNewShape(shapeType_code);
+        
+        try:
+            display_new_shape = rospy.ServiceProxy('display_new_shape', displayNewShape);
+            response = display_new_shape(shape_type_code = shapeType_code);
+            shapeCentre = numpy.array([response.location.x, response.location.y]);
+            #print( response.location);
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+        
+        #shapeCentre = shapeDisplayManager.displayNewShape(shapeType_code);
         headerString = shapeType+'_'+str(param)+'_'+str(paramValue);
         traj = make_traj_msg(shape, shapeCentre, headerString);
         if(naoConnected):
@@ -419,7 +428,7 @@ def feedbackManager(stringReceived):
                 #nao.setpose("StandInit")
                 rospy.sleep(0.4);
                 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
-
+            
             [numItersConverged, newShape, newParamValue] = shapeLearners[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
             print('converged for ' + str(numItersConverged));
             
@@ -478,18 +487,39 @@ def touchInfoManager(pointStamped):
     global touch_subscriber, gesture_subscriber, prevTouchTime
     touchTime = pointStamped.header.stamp.to_sec();
     if((touchTime - prevTouchTime)>minTimeBetweenTouches):
-        touchLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
+        touchLocation = [pointStamped.point.x, pointStamped.point.y];
         
         #map touch location to closest shape drawn
-        [shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(touchLocation);
+        #[shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(touchLocation);
+        try:
+            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
+            request = shapeAtLocationRequest();
+            request.location.x = touchLocation[0];
+            request.location.y = touchLocation[1];
+            response = shape_at_location(request);
+            shapeType_code = response.shape_type_code;
+            shapeID = response.shape_id;
+            #print( response.location);
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+        
         
         if(shapeType_code == -1):
             print('Touch not inside the display area');
         elif(shapeID == -1):
             print('Ignoring touch because not on valid shape');
         else:
-        
-            if(not shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code)):#no more space
+            #ableToDisplay = shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code);
+            try:
+                possible_to_display = rospy.ServiceProxy('possible_to_display_shape', isPossibleToDisplayNewShape);
+                response = possible_to_display(shape_type_code = shapeType_code);
+                ableToDisplay = response.is_possible.data;
+                #print( response.location);
+            except rospy.ServiceException, e:
+                ableToDisplay = False;
+                print "Service call failed: %s"%e
+            
+            if(not ableToDisplay):#no more space
                 print('Can\'t fit anymore letters on the screen');
             else:
                 touch_subscriber.unregister(); #TODO unregister regardless of outcome, and re-subscribe if 'bad' click
@@ -514,15 +544,35 @@ def gestureManager(pointStamped):
         gestureLocation = numpy.array([pointStamped.point.x, pointStamped.point.y]);
 
         #map touch location to closest shape drawn
-        [shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(gestureLocation);
-              
+        #[shapeType_code, shapeID] = shapeDisplayManager.shapeAtLocation(gestureLocation);
+        try:
+            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
+            request = shapeAtLocationRequest();
+            request.location.x = gestureLocation[0];
+            request.location.y = gestureLocation[1];
+            response = shape_at_location(request);
+            shapeType_code = response.shape_type_code;
+            shapeID = response.shape_id;
+            #print( response.location);
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+                  
         if(shapeType_code == -1):
             print('Touch not inside the display area');
         elif(shapeID == -1):
             print('Ignoring touch because not on valid shape');
         else:
-        
-            if(not shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code)):#no more space
+            #ableToDisplay = shapeDisplayManager.isPossibleToDisplayNewShape(shapeType_code);
+            try:
+                possible_to_display = rospy.ServiceProxy('possible_to_display_shape', isPossibleToDisplayNewShape);
+                response = possible_to_display(shape_type_code = shapeType_code);
+                ableToDisplay = response.is_possible.data;
+                #print( response.location);
+            except rospy.ServiceException, e:
+                ableToDisplay = False;
+                print "Service call failed: %s"%e
+            
+            if(not ableToDisplay):#no more space
                 print('Can\'t fit anymore letters on the screen');
             else:
                 touch_subscriber.unregister(); #TODO unregister regardless of outcome, and re-subscribe if 'bad' click
@@ -577,7 +627,13 @@ def stopManager(message):
           
 def clearScreenManager(message):
     print('Clearing display');
-    shapeDisplayManager.clearAllShapes();
+    #shapeDisplayManager.clearAllShapes();
+    try:
+        clear_all_shapes = rospy.ServiceProxy('clear_all_shapes', clearAllShapes);
+        resp1 = clear_all_shapes();
+        print( resp1.success);
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
     
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
@@ -600,9 +656,7 @@ if __name__ == "__main__":
         
     if(args.show):
         plt.ion(); #to plot one shape at a time
-    
-    rospy.sleep(1.0); #maybe this helps the tablet not miss the first one?
-        
+         
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
     #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
 
@@ -619,8 +673,13 @@ if __name__ == "__main__":
     stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
         
     #initialise display manager for shapes (manages positioning of shapes)
-    shapeDisplayManager = ShapeDisplayManager();
-        
+    #shapeDisplayManager = ShapeDisplayManager();
+    from display_manager.srv import *
+    rospy.wait_for_service('clear_all_shapes');
+    
+    rospy.sleep(1.0);   #Allow some time for the subscribers to do their thing, 
+                        #or the first message will be missed (eg. first traj on tablet, first clear request locally)
+
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
         #start speech (ROS isn't working..)
