@@ -16,9 +16,7 @@ numPrincipleComponents = 10; #Number of principle components to keep during PCA 
 
 
 from recordtype import recordtype #for mutable namedtuple (dict might also work)
-
-class ShapeLearner:
-    SettingsStruct = recordtype('SettingsStruct', 
+SettingsStruct = recordtype('SettingsStruct', 
     ['shape_learning',  #String representing the shape which the object is learning
     'datasetFile',      #Path to the dataset file which will be passed to the ShapeModeler
     'paramToVary',      #Natural number between 1 and number of parameters in the associated ShapeModeler, representing the parameter to learn
@@ -28,6 +26,8 @@ class ShapeLearner:
     'initialParamValue',#Initial parameter value (NaN if to be drawn uniformly from initialBounds)
     'minParamDiff']);   #How different two shapes' parameters need to be to be published for comparison
     #@todo: make groupwise comparison/pairwise comparison different implementations of shapeLearner class
+    
+class ShapeLearner:
 
     def __init__(self, settings):
         

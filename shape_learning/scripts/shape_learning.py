@@ -16,7 +16,7 @@ import time
 from enum import Enum 
 
 from shape_learner_manager import ShapeLearnerManager
-from shape_learner import ShapeLearner #for SettingsStruct
+from shape_learner import SettingsStruct
 from shape_modeler import ShapeModeler #for normaliseShapeHeight()
 
 import rospy
@@ -219,7 +219,7 @@ def generateSettings(shapeType):
         datasetFile = '../res/w_dataset.txt';
     else:
         raise RuntimeError("Dataset is not known for shape "+ shapeType);
-    settings = ShapeLearner.SettingsStruct(shape_learning = shapeType,
+    settings = SettingsStruct(shape_learning = shapeType,
     paramToVary = paramToVary, doGroupwiseComparison = True, 
     datasetFile = datasetFile, initialBounds = initialBounds, 
     initialBounds_stdDevMultiples = initialBounds_stdDevMultiples,
@@ -263,10 +263,10 @@ def onShapeFinished(message):
     shapeFinished = True;
                
 ### ----------------------------------------- PUBLISH SIMULATED FEEDBACK    
-def publishSimulatedFeedback(bestShape_index, shapeType, doGroupwiseComparison):           
+def publishSimulatedFeedback(bestShape_index, shapeType_index, doGroupwiseComparison):           
         feedback = String();
         if(doGroupwiseComparison):
-            feedback.data = shapeType + '_' + str(bestShape_index);
+            feedback.data = str(shapeType_index) + '_' + str(bestShape_index);
         else:
             names = ('old', 'new');
             feedback.data = names[bestShape_index];            
@@ -346,13 +346,11 @@ def feedbackManager(stringReceived):
                 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
             
             [numItersConverged, newShape, shapeType, shapeType_code, param, paramValue] = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
-            
-            print('converged for ' + str(numItersConverged));
-            
+                       
             centre = publishShapeAndWaitForFeedback(newShape, shapeType, shapeType_code, param, paramValue);
-            if(simulatedFeedback):
-                bestShape_index = wordLearners.generateSimulatedFeedback(shapeIndex_messageFor, newShape, newParamValue);
-                publishSimulatedFeedback(bestShape_index, shape_messageFor,True);
+            if(simulatedFeedback and numItersConverged == 0):
+                bestShape_index = wordManager.generateSimulatedFeedback(shapeIndex_messageFor, newShape, paramValue);
+                publishSimulatedFeedback(bestShape_index, shapeIndex_messageFor,True);
 
             elif(not tabletConnected):
                 rospy.sleep(10);
@@ -369,7 +367,7 @@ def feedbackManager(stringReceived):
                 print('Shape finished.');
                 
             if(numItersConverged>0):
-                print("I can\'t make anymore different shapes");
+                print("I can\'t make anymore different shapes (converged for " + str(numItersConverged) + "iterations)");
                 
             if(numItersConverged >= numItersBeforeConsideredStuck):
                 print("I think I'm stuck...");
@@ -410,7 +408,7 @@ def wordMessageManager(message):
         print('Sending '+shapeType);
         centre = publishShapeAndWaitForFeedback(shape, shapeType, shapeType_code, paramToVary, paramValue);
         if(simulatedFeedback): #pretend first one isn't good enough
-            publishSimulatedFeedback(0,shapeType,True); 
+            publishSimulatedFeedback(0,shapeType_code,True); 
 
         elif(not tabletConnected):
             rospy.sleep(10);
