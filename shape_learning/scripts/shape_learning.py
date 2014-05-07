@@ -9,6 +9,7 @@ eg. '0_2' for the first letter's 3rd version being the best.
 
 
 import numpy
+from scipy import interpolate
 import math
 import pdb
 import matplotlib.pyplot as plt
@@ -71,14 +72,17 @@ else:
 sizeScale_height = 0.035;    #Desired height of shape (metres)
 sizeScale_width = 0.023;     #Desired width of shape (metres)
 numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to (not guaranteed)
+numPoints_shapeModeler = 70; #Number of points used by ShapeModelers
 
 #tablet parameters
 tabletConnected = True;      #If true, will wait for shape_finished notification before proceeding to the next shape (rather than a fixed delay)
 minTimeBetweenTouches = 0.1  #Seconds allowed between touches for the second one to be considered
 
 CLEAR_SCREEN_TOPIC = 'clear_screen';
-WORDS_TOPIC = 'words_to_write';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
+USER_DRAW_SHAPES_TOPIC = 'user_shapes';
+
+WORDS_TOPIC = 'words_to_write';
 TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
 STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
 
@@ -96,31 +100,31 @@ else:
     rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
-
-
-from numpy import mean;
-def downsample_1d(myarr,factor,estimator=mean):
-    """
-    FROM http://code.google.com/p/agpy/source/browse/trunk/AG_image_tools/downsample.py?r=452
-    Downsample a 1D array by averaging over *factor* pixels.
-    Crops right side if the shape is not a multiple of factor.
-
-    This code is pure numpy and should be fast.
-
-    keywords:
-        estimator - default to mean.  You can downsample by summing or
-            something else if you want a different estimator
-            (e.g., downsampling error: you want to sum & divide by sqrt(n))
-    """
-    #xs = myarr.shape
-    xs = len(myarr);
-    factor = int(factor);
-    crarr = myarr[:xs-(xs % factor)]
-    dsarr = estimator( numpy.concatenate([[crarr[i::factor]
-        for i in range(factor)] ]),axis=0)
-    return dsarr
-    
-    
+def read_traj_msg(message):
+    x_shape = [];
+    y_shape = [];
+    for poseStamped in message.poses:
+        x_shape.append(poseStamped.pose.position.x);
+        y_shape.append(-poseStamped.pose.position.y);
+        
+    numPointsInShape = len(x_shape); 
+    #make shape have the same number of points as the shape_modeler
+    t_current = numpy.linspace(0, 1, numPointsInShape);
+    t_desired = numpy.linspace(0, 1, numPoints_shapeModeler);
+    f = interpolate.interp1d(t_current, x_shape, kind='cubic');
+    x_shape = f(t_desired);
+    f = interpolate.interp1d(t_current, y_shape, kind='cubic');
+    y_shape = f(t_desired);
+       
+    shape = [];
+    shape[0:numPoints_shapeModeler] = x_shape;
+    shape[numPoints_shapeModeler:] = y_shape;
+    shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
+    if(args.show):
+        plt.figure(1);
+        ShapeModeler.normaliseAndShowShape(shape);
+            
+            
 def make_traj_msg(shape, shapeCentre, headerString):      
     
     traj = Path();
@@ -131,17 +135,21 @@ def make_traj_msg(shape, shapeCentre, headerString):
     
     x_shape = shape[0:numPointsInShape];
     y_shape = shape[numPointsInShape:];
-    
-    #downsample shape
-    downsampleFactor = math.ceil(numPointsInShape/numDesiredShapePoints);#determine appropriate factor for downsampling
-    x_shape = downsample_1d(x_shape,downsampleFactor);
-    y_shape = downsample_1d(y_shape,downsampleFactor);
+
+    #make shape have the same number of points as the shape_modeler
+    t_current = numpy.linspace(0, 1, numPointsInShape);
+    t_desired = numpy.linspace(0, 1, numDesiredShapePoints);
+    f = interpolate.interp1d(t_current, x_shape[:,0], kind='cubic');
+    x_shape = f(t_desired);
+    f = interpolate.interp1d(t_current, y_shape[:,0], kind='cubic');
+    y_shape = f(t_desired);
+
     numPointsInShape = len(x_shape);
     
     for i in range(numPointsInShape):
         point = PoseStamped();
-        point.pose.position.x = x_shape[i,0]*sizeScale_width;
-        point.pose.position.y = -y_shape[i,0]*sizeScale_height;
+        point.pose.position.x = x_shape[i]*sizeScale_width;
+        point.pose.position.y = -y_shape[i]*sizeScale_height;
         
         point.pose.position.x+= + shapeCentre[0];
         point.pose.position.y+= + shapeCentre[1];
@@ -386,7 +394,7 @@ def feedbackManager(stringReceived):
 
         
 def wordMessageManager(message):
-    global shapeFinished#@todo make class attribute 
+    global shapeFinished, wordManager #@todo make class attribute 
     
     wordToLearn = message.data;
     wordSeenBefore = wordManager.newCollection(wordToLearn);
@@ -401,6 +409,7 @@ def wordMessageManager(message):
         
     #clear screen
     pub_clear.publish(Empty());
+    rospy.sleep(0.5);
     
     #start learning        
     for i in range(len(wordToLearn)):
@@ -483,6 +492,9 @@ if __name__ == "__main__":
     
     #listen for when to stop
     stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
+    
+    #listen for user-drawn shapes
+    shape_subscriber = rospy.Subscriber(USER_DRAW_SHAPES_TOPIC, Path, read_traj_msg); 
         
     #initialise display manager for shapes (manages positioning of shapes)
     from display_manager.srv import *
