@@ -52,6 +52,7 @@ class ShapeLearner:
         self.paramToVary = settings.paramToVary;
         self.minParamDiff = settings.minParamDiff;
         self.initialParamValue = settings.initialParamValue;
+        self.params = numpy.zeros((numPrincipleComponents,1));
 
         self.converged = False;
         self.numIters = 0;
@@ -61,36 +62,37 @@ class ShapeLearner:
     def startLearning(self):
         #make initial shape
         if(numpy.isnan(self.initialParamValue)):
-            [shape, paramValue] = self.shapeModeler.makeRandomShapeFromUniform(self.paramToVary, self.bounds);
+            [shape, paramValues] = self.shapeModeler.makeRandomShapeFromUniform(self.params, self.paramToVary, self.bounds);
+            self.params = paramValues;
         else:
-            paramValue = self.initialParamValue;
-            shape = self.shapeModeler.makeShapeVaryingParam(self.paramToVary, paramValue);
+            shape = self.shapeModeler.makeShape(self.params);
 
-        self.bestParamValue = paramValue;
+        self.bestParamValue = self.params[self.paramToVary-1,0];
         print('Bounds: '+str(self.bounds));
         print('Test param: '+str(self.bestParamValue));
         if(self.doGroupwiseComparison):
             self.params_sorted = [self.bounds[0], self.bounds[1]];
             bisect.insort(self.params_sorted, self.bestParamValue);
-            self.shapeToParamMapping = [self.bestParamValue];
+            self.shapeToParamsMapping = [self.params];
         else:
-            self.newParamValue = paramValue;
+            self.newParamValue = self.bestParamValue;
         
-        return shape, paramValue;
+        return shape, self.bestParamValue;
 
 ### ---------------------------------------- START LEARNING - TRIANGULAR       
     def startLearningAt(self, startingBounds, startingParamValue):
         self.bounds = startingBounds;
         
         #make initial shape
-        [shape, paramValue] = self.shapeModeler.makeRandomShapeFromriangular(self.paramToVary, self.bounds, startingParamValue);
+        [shape, paramValue] = self.shapeModeler.makeRandomShapeFromriangular(self.params, self.paramToVary, self.bounds, startingParamValue);
+        self.params[self.paramToVary-1,0] = paramValue;
         self.bestParamValue = paramValue;
         print('Bounds: '+str(self.bounds));
         print('Test param: '+str(self.bestParamValue));
         if(self.doGroupwiseComparison):
             self.params_sorted = [self.bounds[0], self.bounds[1]];
             bisect.insort(self.params_sorted, self.bestParamValue);
-            self.shapeToParamMapping = [self.bestParamValue];
+            self.shapeToParamsMapping = [self.params];
         else:
             self.newParamValue = paramValue;
         
@@ -100,11 +102,13 @@ class ShapeLearner:
 ### ----------------------------------------------- MAKE DIFFERENT SHAPE        
     def makeShapeDifferentTo(self, paramValue):
         #make new shape to compare with
-        [newShape, newParamValue] = self.shapeModeler.makeRandomShapeFromTriangular(self.paramToVary, self.bounds, self.bestParamValue);
+        [newShape, newParams] = self.shapeModeler.makeRandomShapeFromTriangular(self.params, self.paramToVary, self.bounds, self.bestParamValue);
+        newParamValue = newParams[self.paramToVary-1,0];
         #ensure it is significantly different
         numAttempts = 1;
         while(abs(newParamValue - paramValue) < self.minParamDiff and numAttempts < maxNumAttempts):
-            [newShape, newParamValue] = self.shapeModeler.makeRandomShapeFromTriangular(self.paramToVary, self.bounds, self.bestParamValue);
+            [newShape, newParams] = self.shapeModeler.makeRandomShapeFromTriangular(self.params, self.paramToVary, self.bounds, self.bestParamValue);
+            newParamValue = newParams[self.paramToVary-1,0];
             numAttempts+=1;      
         
         if(numAttempts>=maxNumAttempts): #couldn't find a 'different' shape in range
@@ -113,27 +117,30 @@ class ShapeLearner:
         #store it as an attempt
         if(self.doGroupwiseComparison):
             bisect.insort(self.params_sorted, newParamValue);
-            self.shapeToParamMapping.append(newParamValue);
+            self.shapeToParamsMapping.append(newParams);
             
         return newShape, newParamValue   
         
 ### ------------------------------------------------- MAKE SIMILAR SHAPE        
     def makeShapeSimilarTo(self, paramValue):
         #make new shape, but don't enforce that it is sufficiently different
-        [newShape, newParamValue] = self.shapeModeler.makeRandomShapeFromTriangular(self.paramToVary, self.bounds, self.bestParamValue);
+        [newShape, newParamValues] = self.shapeModeler.makeRandomShapeFromTriangular(self.params, self.paramToVary, self.bounds, self.bestParamValue);
+        newParamValue = newParamValues[self.paramToVary-1,0];
         
         #store it as an attempt
         if(self.doGroupwiseComparison):
             bisect.insort(self.params_sorted, newParamValue);
-            self.shapeToParamMapping.append(newParamValue);
+            self.shapeToParamsMapping.append(newParamValues);
             
         return newShape, newParamValue 
 ### ---------------------------------------- GENERATE SIMULATED FEEDBACK
     def generateSimulatedFeedback(self, shape, newParamValue):
         #code in place of feedback from user: go towards goal parameter value
         goalParamValue =  numpy.float64(0);#-1.5*parameterVariances[self.paramToVary-1];
+        goalParamsValue = numpy.zeros((numPrincipleComponents,1));
+        goalParamsValue[self.paramToVary-1,0] = goalParamValue;
         if(self.doGroupwiseComparison):
-            errors = numpy.ndarray.tolist(abs(self.shapeToParamMapping-goalParamValue));
+            errors = numpy.ndarray.tolist(abs(self.shapeToParamsMapping-goalParamsValue));
             bestShape_idx = errors.index(min(errors));
         else:   
             errors = [abs(self.bestParamValue- goalParamValue), abs(newParamValue- goalParamValue)];
@@ -144,7 +151,8 @@ class ShapeLearner:
     def respondToFeedback(self, bestShape):
         #update bestParamValue based on feedback received
         if(self.doGroupwiseComparison):
-            self.bestParamValue = self.shapeToParamMapping[bestShape];
+            self.params = self.shapeToParamsMapping[bestShape];
+            self.bestParamValue = self.params[self.paramToVary-1,0];
             print('Chosen param value: ' + str(self.bestParamValue));
             bestParamValue_index = bisect.bisect(self.params_sorted,self.bestParamValue) - 1; #indexing seems to start at 1 with bisect
             newBounds = [self.params_sorted[bestParamValue_index-1],self.params_sorted[bestParamValue_index+1]];
@@ -162,10 +170,12 @@ class ShapeLearner:
             #restrict limits
             if( bestShape == 'new' ):   #new shape is better
                 worstParamValue = self.bestParamValue;
-                bestParamValue = self.newParamValue;  
+                bestParamValue = self.newParamValue; 
+                self.params[self.paramToVary-1,0] = bestParamValue; 
             else:                   #new shape is worse
                 worstParamValue = self.newParamValue;
                 bestParamValue = self.bestParamValue;
+                self.params[self.paramToVary-1,0] = bestParamValue;
                 
             if( worstParamValue == min(self.bestParamValue,self.newParamValue) ): #shape with lower value is worse
                 self.bounds[0] = worstParamValue; #increase min bound to worst so we don't try any lower

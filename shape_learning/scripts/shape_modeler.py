@@ -67,22 +67,30 @@ class ShapeModeler:
         xb = numpy.zeros((self.numPrincipleComponents,1));
         xb[paramToVary-1] = paramValue;
         shape = self.makeShape(xb);
-        return shape;
+        return shape, xb;
         
     #Draw 'paramToVary' value from uniform distribution with limits 'bounds' and make shape
-    def makeRandomShapeFromUniform(self, paramToVary, bounds):
-        xb = numpy.zeros((self.numPrincipleComponents,1));
+    def makeRandomShapeFromUniform(self, params, paramToVary, bounds):
+        xb = params;
         sample = random.uniform(bounds[0],bounds[1]);
         xb[paramToVary-1] = sample;
         shape = self.makeShape(xb);
-        return shape, sample;    
+        return shape, xb;    
         
     #Draw 'paramToVary' value from triangular distribution with limits 'bounds' and mode 'mode' and make shape       
-    def makeRandomShapeFromTriangular(self, paramToVary, bounds, mode):
-        b = numpy.zeros((self.numPrincipleComponents,1));
+    def makeRandomShapeFromTriangular(self, params, paramToVary, bounds, mode):
+        b = params;
         sample = random.triangular(bounds[0],mode,bounds[1]);
         b[paramToVary-1] = sample;
-        return self.makeShape(b), sample;       
+        return self.makeShape(b), b;  
+        
+    #Convert shape into its 'numPrincipleComponents' parameter values (project it onto the numPrincipleComponents-dimensional space)
+    def decomposeShape(self, shape):
+        #import pdb; pdb.set_trace();
+        if(not shape.shape == (self.numPointsInShapes*2,1)):
+            raise RuntimeError("Shape to decompose must be the same size as shapes used to make the dataset");
+        params = numpy.dot(self.principleComponents.T, shape - self.meanShape);
+        return params
         
     #Show shape with random colour
     @staticmethod
