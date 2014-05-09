@@ -63,30 +63,32 @@ class ShapeModeler:
         return shape;  
               
     #Generate a shape modifying the given parameter
-    def makeShapeVaryingParam(self, paramToVary, paramValue):
+    def makeShapeVaryingParam(self, paramsToVary, paramValues):
         xb = numpy.zeros((self.numPrincipleComponents,1));
-        xb[paramToVary-1] = paramValue;
+        for i in range(len(paramsToVary)):
+            xb[paramsToVary[i]-1,0] = paramValues[i];
         shape = self.makeShape(xb);
         return shape, xb;
         
-    #Draw 'paramToVary' value from uniform distribution with limits 'bounds' and make shape
-    def makeRandomShapeFromUniform(self, params, paramToVary, bounds):
+    #Draw 'paramsToVary' values from uniform distribution with limits given by 'bounds' and make shape
+    def makeRandomShapeFromUniform(self, params, paramsToVary, bounds):
         xb = params;
-        sample = random.uniform(bounds[0],bounds[1]);
-        xb[paramToVary-1] = sample;
+        for i in range(len(paramsToVary)):
+            sample = random.uniform(bounds[i,0],bounds[i,1]);
+            xb[paramsToVary[i]-1,0] = sample;
         shape = self.makeShape(xb);
         return shape, xb;    
         
-    #Draw 'paramToVary' value from triangular distribution with limits 'bounds' and mode 'mode' and make shape       
-    def makeRandomShapeFromTriangular(self, params, paramToVary, bounds, mode):
+    #Draw 'paramsToVary' values from triangular distribution with limits given by 'bounds' and modes given by 'modes' and make shape       
+    def makeRandomShapeFromTriangular(self, params, paramsToVary, bounds, modes):
         b = params;
-        sample = random.triangular(bounds[0],mode,bounds[1]);
-        b[paramToVary-1] = sample;
+        for i in range(len(paramsToVary)):
+            sample = random.triangular(bounds[i,0],modes[i],bounds[i,1]);
+            b[paramsToVary[i]-1,0] = sample;
         return self.makeShape(b), b;  
         
     #Convert shape into its 'numPrincipleComponents' parameter values (project it onto the numPrincipleComponents-dimensional space)
     def decomposeShape(self, shape):
-        #import pdb; pdb.set_trace();
         if(not shape.shape == (self.numPointsInShapes*2,1)):
             raise RuntimeError("Shape to decompose must be the same size as shapes used to make the dataset");
         params = numpy.dot(self.principleComponents.T, shape - self.meanShape);

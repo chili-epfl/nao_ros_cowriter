@@ -71,7 +71,7 @@ else:
     delayBeforeExecuting = 3.5;
 sizeScale_height = 0.035;    #Desired height of shape (metres)
 sizeScale_width = 0.023;     #Desired width of shape (metres)
-numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to (not guaranteed)
+numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to 
 numPoints_shapeModeler = 70; #Number of points used by ShapeModelers
 
 #tablet parameters
@@ -108,23 +108,30 @@ def read_traj_msg(message):
         y_shape.append(-poseStamped.pose.position.y);
         
     numPointsInShape = len(x_shape); 
-    #make shape have the same number of points as the shape_modeler
-    t_current = numpy.linspace(0, 1, numPointsInShape);
-    t_desired = numpy.linspace(0, 1, numPoints_shapeModeler);
-    f = interpolate.interp1d(t_current, x_shape, kind='cubic');
-    x_shape = f(t_desired);
-    f = interpolate.interp1d(t_current, y_shape, kind='cubic');
-    y_shape = f(t_desired);
-       
-    shape = [];
-    shape[0:numPoints_shapeModeler] = x_shape;
-    shape[numPoints_shapeModeler:] = y_shape;
-    shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
-    if(args.show):
-        plt.figure(1);
-        ShapeModeler.normaliseAndShowShape(shape);
-            
-            
+    
+    if(numPointsInShape<15):
+        print('Ignoring shape because it wasn\'t long enough');
+    else:
+        #make shape have the same number of points as the shape_modeler
+        t_current = numpy.linspace(0, 1, numPointsInShape);
+        t_desired = numpy.linspace(0, 1, numPoints_shapeModeler);
+        f = interpolate.interp1d(t_current, x_shape, kind='cubic');
+        x_shape = f(t_desired);
+        f = interpolate.interp1d(t_current, y_shape, kind='cubic');
+        y_shape = f(t_desired);
+           
+        shape = [];
+        shape[0:numPoints_shapeModeler] = x_shape;
+        shape[numPoints_shapeModeler:] = y_shape;
+        shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
+        shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
+        if(args.show):
+            plt.figure(1);
+            ShapeModeler.normaliseAndShowShape(shape);
+        
+        shape = wordManager.respondToDemonstration(0, shape);
+        publishShapeAndWaitForFeedback(shape, 'u', 0, 0, 0);
+    
 def make_traj_msg(shape, shapeCentre, headerString):      
     
     traj = Path();
@@ -166,42 +173,42 @@ def make_traj_msg(shape, shapeCentre, headerString):
 ###---------------------------------------------- WORD LEARNING SETTINGS
 
 def generateSettings(shapeType):
-    paramToVary = 2;            #Natural number between 1 and numPrincipleComponents, representing which principle component to vary from the template
-    initialBounds_stdDevMultiples = [-6, 6];  #Starting bounds for paramToVary, as multiples of the parameter's observed standard deviation in the dataset
+    paramsToVary = [2];            #Natural number between 1 and numPrincipleComponents, representing which principle component to vary from the template
+    initialBounds_stdDevMultiples = numpy.array([[-6, 6]]);  #Starting bounds for paramToVary, as multiples of the parameter's observed standard deviation in the dataset
     doGroupwiseComparison = True; #instead of pairwise comparison with most recent two shapes
     initialParamValue = numpy.NaN;
-    initialBounds = [numpy.NaN, numpy.NaN];
+    initialBounds = numpy.array([[numpy.NaN, numpy.NaN]]);
     
     if shapeType == 'a':
         paramToVary = 6;
-        initialBounds_stdDevMultiples = [-5, 5];
+        initialBounds_stdDevMultiples = numpy.array([[-5, 5]]);
         datasetFile = '../res/a_noHook_dataset.txt';
     elif shapeType == 'c':
         paramToVary = 4;
-        initialBounds_stdDevMultiples = [-10, 10];
+        initialBounds_stdDevMultiples = numpy.array([[-10, 10]]);
         datasetFile = '../res/c_dataset.txt';
         
         if(learningModes[shapeType] == LearningModes.startsRandom):
-            initialBounds_stdDevMultiples = [-10, 10];
+            initialBounds_stdDevMultiples = numpy.array([[-10, 10]]);
         elif(learningModes[shapeType] == LearningModes.alwaysGood):
-            initialBounds_stdDevMultiples = [-4, -3];
+            initialBounds_stdDevMultiples = numpy.array([[-4, -3]]);
             initialParamValue = -0.5;
         elif(learningModes[shapeType] == LearningModes.alwaysBad):
-            initialBounds_stdDevMultiples = [1.5, 10];
+            initialBounds_stdDevMultiples = numpy.array([[1.5, 10]]);
             initialParamValue = 0.5;
         elif(learningModes[shapeType] == LearningModes.startsBad):
-            initialBounds_stdDevMultiples = [-10, 10];
+            initialBounds_stdDevMultiples = numpy.array([[-10, 10]]);
             initialParamValue = 0.5; 
     elif shapeType == 'd':
         datasetFile = '../res/d_cursive_dataset.txt';
     elif shapeType == 'e':
         paramToVary = 3; 
-        initialBounds_stdDevMultiples = [-6, 14];
+        initialBounds_stdDevMultiples = numpy.array([[-6, 14]]);
         datasetFile = '../res/e_dataset.txt';
         initialParamValue = 0.8;
     elif shapeType == 'm':
         paramToVary = 6; 
-        initialBounds_stdDevMultiples = [-10, -6];
+        initialBounds_stdDevMultiples = numpy.array([[-10, -6]]);
         datasetFile = '../res/m_dataset.txt';
         initialParamValue = -0.5;#0.0;
     elif shapeType == 'n':
@@ -210,7 +217,7 @@ def generateSettings(shapeType):
         initialParamValue = 0.0;
     elif shapeType == 'o':
         paramToVary = 4;
-        initialBounds_stdDevMultiples = [-3.5, 3];
+        initialBounds_stdDevMultiples = numpy.array([[-3.5, 3]]);
         datasetFile = '../res/o_dataset.txt';
     elif shapeType == 'r':
         paramToVary = 1;
@@ -218,7 +225,7 @@ def generateSettings(shapeType):
     elif shapeType == 's':
         datasetFile = '../res/s_print_dataset.txt';
     elif shapeType == 'u':
-        paramToVary = 3;
+        paramsToVary = [3];
         datasetFile = '../res/u_dataset.txt';
     elif shapeType == 'v':
         paramToVary = 6;
@@ -228,7 +235,7 @@ def generateSettings(shapeType):
     else:
         raise RuntimeError("Dataset is not known for shape "+ shapeType);
     settings = SettingsStruct(shape_learning = shapeType,
-    paramToVary = paramToVary, doGroupwiseComparison = True, 
+    paramsToVary = paramsToVary, doGroupwiseComparison = True, 
     datasetFile = datasetFile, initialBounds = initialBounds, 
     initialBounds_stdDevMultiples = initialBounds_stdDevMultiples,
     initialParamValue = initialParamValue, minParamDiff = 0.4);
