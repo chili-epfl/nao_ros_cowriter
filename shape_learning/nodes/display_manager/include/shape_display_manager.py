@@ -75,18 +75,24 @@ class ShapeDisplayManager: #TODO make implementation of abstract class/interface
 
         return foundSpace;
 
-    def shapeAtLocation(self, location):          
-        #map a location to the shape drawn at that location. 
-        #shapeType_code will be -1 if invalid location.
-        #shapeID will be -1 if no shape present at location.
+    def indexOfLocation(self, location):
         location = numpy.array(location);
         location_cell = (location - shapeSize/2)/shapeSize;
     
         numRows = self.shapesDrawn.shape[0];
-        numCols = self.shapesDrawn.shape[1];
 
         row = (numRows -1)- int(round(location_cell[1]));
         col = int(round(location_cell[0]));
+        return row, col
+        
+    def shapeAtLocation(self, location):          
+        #map a location to the shape drawn at that location. 
+        #shapeType_code will be -1 if invalid location.
+        #shapeID will be -1 if no shape present at location.
+        [row, col] = self.indexOfLocation(location);
+    
+        numRows = self.shapesDrawn.shape[0];
+        numCols = self.shapesDrawn.shape[1];
         
         if(row>(numRows-1) or row<0):
             print('Invalid row');

@@ -130,6 +130,19 @@ class ShapeModeler:
         shape[numPointsInShape:] = y_shape;
         return shape
         
+    #Calculate the centre of the shape
+    @staticmethod
+    def getShapeCentre(shape):
+        numPointsInShape = len(shape)/2;
+        x_shape = shape[0:numPointsInShape];
+        y_shape = shape[numPointsInShape:];
+
+        x_range = max(x_shape)-min(x_shape);
+        y_range = max(y_shape)-min(y_shape);
+        x_centre = (max(x_shape)-x_range/2);
+        y_centre = (max(y_shape)-y_range/2);
+        return [x_centre,-y_centre];
+        
     #Normalise shape so that height is 1 
     @staticmethod
     def normaliseShapeHeight(shape):
@@ -140,8 +153,10 @@ class ShapeModeler:
         #shift so centre of shape is at (0,0)
         x_range = max(x_shape)-min(x_shape);
         y_range = max(y_shape)-min(y_shape);
-        x_shape = x_shape-(max(x_shape)-x_range/2); 
-        y_shape = y_shape-(max(y_shape)-y_range/2);
+        x_centre = (max(x_shape)-x_range/2);
+        y_centre = (max(y_shape)-y_range/2);
+        x_shape = x_shape-x_centre; 
+        y_shape = y_shape-y_centre;
         
         #normalise shape
         scale = y_range;

@@ -69,7 +69,7 @@ class ShapeLearner:
         else:
             shape = self.shapeModeler.makeShape(self.params);
 
-        self.bestParamValue = paramValues[self.paramsToVary[0]-1]; #   USE ONLY FIRST PARAM IN LIST FOR SELF-LEARNING ALGORITHM
+        self.bestParamValue = self.params[self.paramsToVary[0]-1]; #   USE ONLY FIRST PARAM IN LIST FOR SELF-LEARNING ALGORITHM
         
         print('Bounds: '+str(self.bounds[0,:]));#   USE ONLY FIRST PARAM IN LIST FOR SELF-LEARNING ALGORITHM
         print('Test param: '+str(self.bestParamValue));

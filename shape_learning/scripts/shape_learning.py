@@ -123,14 +123,26 @@ def read_traj_msg(message):
         shape = [];
         shape[0:numPoints_shapeModeler] = x_shape;
         shape[numPoints_shapeModeler:] = y_shape;
+        
+        location = ShapeModeler.getShapeCentre(numpy.array(shape));
+        try:
+            index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
+            request = indexOfLocationRequest();
+            request.location.x = location[0];
+            request.location.y = location[1];
+            response = index_of_location(request);
+            shapeIndex_demoFor = response.row;
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+
         shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
         shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
         if(args.show):
             plt.figure(1);
             ShapeModeler.normaliseAndShowShape(shape);
         
-        shape = wordManager.respondToDemonstration(0, shape);
-        publishShapeAndWaitForFeedback(shape, 'u', 0, 0, 0);
+        shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
+        publishShapeAndWaitForFeedback(shape, 'u', shapeIndex_demoFor, 0, 0); #TO DO ..obviously, don't hard-code shapeType
     
 def make_traj_msg(shape, shapeCentre, headerString):      
     

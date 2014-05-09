@@ -24,20 +24,27 @@ def handle_display_new_shape(request):
     response.location.x = location[0];
     response.location.y = location[1];
     
-    print('Shape added');
+    print('Shape added at '+str(location));
     return response;
+
+def handle_index_of_location(request):
+    response = indexOfLocationResponse();
+    location = [request.location.x, request.location.y];
+    [response.row, response.column] = shapeDisplayManager.indexOfLocation(location);
+    print('Index returned: ' + str(response.row) + ', ' + str(response.column));
+    return response;  
     
 def handle_shape_at_location(request):
     response = shapeAtLocationResponse();
     location = [request.location.x, request.location.y];
     [response.shape_type_code, response.shape_id] = shapeDisplayManager.shapeAtLocation(location);
-    print('Shape location returned');
+    print('Shape at location returned: '+str(response.shape_type_code)+'_'+str(response.shape_id));
     return response;
 
 def handle_possible_to_display(request):
     response = isPossibleToDisplayNewShapeResponse();
     response.is_possible.data = shapeDisplayManager.isPossibleToDisplayNewShape(request.shape_type_code);
-    print('If possible returned');
+    print('If possible returned '+str(response.is_possible.data));
     return response;
 
 def display_manager_server():
@@ -48,7 +55,10 @@ def display_manager_server():
     display_shape_service = rospy.Service('display_new_shape', displayNewShape, handle_display_new_shape)
     print "Ready to display new shapes."
     
-    display_shape_service = rospy.Service('shape_at_location', shapeAtLocation, handle_shape_at_location)
+    index_of_location_service = rospy.Service('index_of_location', indexOfLocation, handle_index_of_location)
+    print "Ready to determine index of location."
+    
+    shape_at_location_service = rospy.Service('shape_at_location', shapeAtLocation, handle_shape_at_location)
     print "Ready to determine shape at location."
     
     possible_to_display_service = rospy.Service('possible_to_display_shape', isPossibleToDisplayNewShape, handle_possible_to_display)

@@ -59,6 +59,7 @@ add_service_files(
    clearAllShapes.srv
    displayNewShape.srv
    isPossibleToDisplayNewShape.srv
+   indexOfLocation.srv
    shapeAtLocation.srv
 )
 
