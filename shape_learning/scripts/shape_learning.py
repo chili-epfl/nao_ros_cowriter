@@ -387,11 +387,14 @@ def feedbackManager(stringReceived):
                 rospy.sleep(0.1);
                 #listen for notification that the letter is finished
                 shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
-                while(not shapeFinished):
+                while(not shapeFinished and tabletWatchdog.isResponsive()):
                     rospy.sleep(0.1);
                 shape_finished_subscriber.unregister();
                 shapeFinished = False;
-                print('Shape finished.');
+                if(not tabletWatchdog.isResponsive()): #stopped waiting because lost connection
+                    print('Error connecting to tablet');
+                else:
+                    print('Shape finished.');
                 
             if(numItersConverged>0):
                 print("I can\'t make anymore different shapes (converged for " + str(numItersConverged) + "iterations)");
@@ -445,11 +448,14 @@ def wordMessageManager(message):
             rospy.sleep(0.1);
             #listen for notification that the letter is finished
             shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
-            while(not shapeFinished):
+            while(not shapeFinished and tabletWatchdog.isResponsive()):
                 rospy.sleep(0.1);
             shape_finished_subscriber.unregister();
             shapeFinished = False;
-            print('Shape finished.');
+            if(not tabletWatchdog.isResponsive()): #stopped waiting because lost connection
+                print('Error connecting to tablet');
+            else:
+                print('Shape finished.');
             
     if(naoConnected):
         lookAndAskForFeedback("What do you think?");
@@ -521,7 +527,11 @@ if __name__ == "__main__":
     
     rospy.sleep(1.0);   #Allow some time for the subscribers to do their thing, 
                         #or the first message will be missed (eg. first traj on tablet, first clear request locally)
-
+    
+    from watchdog import Watchdog
+    tabletWatchdog = Watchdog('watchdog_clear/tablet', 2);
+    #naoWatchdog = Watchdog('watchdo_clear/nao', 2);
+    
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
         #start speech (ROS isn't working..)
