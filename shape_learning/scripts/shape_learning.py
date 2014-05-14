@@ -126,12 +126,30 @@ def read_traj_msg(message):
         
         location = ShapeModeler.getShapeCentre(numpy.array(shape));
         try:
+            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
+            request = shapeAtLocationRequest();
+            request.location.x = location[0];
+            request.location.y = location[1];
+            response = shape_at_location(request);
+            shapeIndex_demoFor = response.shape_type_code;
+            #TODO: map to closest shape on screen
+            '''
+            closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
+            request = closestShapeToLocationRequest();
+            request.location.x = location[0];
+            request.location.y = location[1];
+            response = closest_shape_to_location(request);
+            shapeIndex_demoFor = response.shape_type_code;
+            '''
+            
+            '''
             index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
             request = indexOfLocationRequest();
             request.location.x = location[0];
             request.location.y = location[1];
             response = index_of_location(request);
             shapeIndex_demoFor = response.row;
+            '''
         except rospy.ServiceException, e:
             print "Service call failed: %s"%e
 
