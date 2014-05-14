@@ -25,6 +25,8 @@ from nav_msgs.msg import Path
 from geometry_msgs.msg import PoseStamped, Point, PointStamped
 from std_msgs.msg import String, Empty
 
+from state_machine import StateMachine
+
 #Nao parameters
 NAO_IP = '192.168.1.10';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
@@ -431,11 +433,16 @@ def feedbackManager(stringReceived):
                     rospy.sleep(0.7);
                     nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
                     nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
-
+    
+    nextState = "ASKING_FOR_FEEDBACK";
+    infoForNextState = centre;
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState
         
 def wordMessageManager(message):
     global shapeFinished, wordManager #@todo make class attribute 
-    
+    print("Cheers");
     wordToLearn = message.data;
     wordSeenBefore = wordManager.newCollection(wordToLearn);
     if(naoConnected):
@@ -474,21 +481,48 @@ def wordMessageManager(message):
                 print('Error connecting to tablet');
             else:
                 print('Shape finished.');
-            
+    
+    nextState = "ASKING_FOR_FEEDBACK";
+    infoForNextState = centre;
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState
+    
+def askForFeedback(infoFromPrevState): 
+    print('Any good?');           
+    centre = infoFromPrevState;
     if(naoConnected):
         lookAndAskForFeedback("What do you think?");
         rospy.sleep(0.7);
         nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
         nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
     
+    nextState = "WAITING_FOR_FEEDBACK";
+    infoForNextState = {'state_cameFrom': "ASKING_FOR_FEEDBACK"};
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState
 
 def testManager(message):
     if(naoSpeaking):
         textToSpeech.say('Ok, test time. I\'ll try my best.');
 
-def stopManager(message):
+stopRequestReceived = False;
+def onStopRequestReceived(message):
+    global stopRequestReceived
+    stopRequestReceived = True;
+    
+def stopManager(infoFromPrevState):
+    print('Ok speak later');
     if(naoSpeaking):
-        textToSpeech.say('Thank you for your help.');       
+        textToSpeech.say('Thank you for your help.');   
+    if(naoConnected):
+        nao.execute([naoqi_request("motion","rest",[])]);
+
+    nextState = "EXIT";
+    infoForNextState = 0;
+    rospy.signal_shutdown('Interaction exited');
+    return nextState, infoForNextState
           
 def clearScreenManager(message):
     print('Clearing display');
@@ -498,7 +532,59 @@ def clearScreenManager(message):
         print( resp1.success);
     except rospy.ServiceException, e:
         print "Service call failed: %s"%e
+        
+def startInteraction(infoFromPrevState):
+    print('Hey, I\'m Nao...');
+    nextState = "WAITING_FOR_WORD";
+    infoForNextState = {'state_cameFrom': "START_INTERACTION"};
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState
+
+def onWordReceived(message):
+    global wordReceived 
+    wordReceived = message;  
+
+wordReceived = None;
+def waitForWord(infoFromPrevState):
+    global wordReceived
+    if(infoFromPrevState['state_cameFrom'] == "START_INTERACTION"):
+        print("Do you have any words for me to write?");
     
+    if(wordReceived is None):
+        nextState = "WAITING_FOR_WORD";
+        infoForNextState = {'state_cameFrom': "WAITING_FOR_WORD"};
+    else:
+        print('Got message');
+        infoForNextState = wordReceived;
+        wordReceived = None;
+        nextState = "RESPONDING_TO_NEW_WORD";
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState
+    
+def onFeedbackReceived(message):
+    global feedbackReceived 
+    feedbackReceived = message;  
+
+feedbackReceived = None;
+def waitForFeedback(infoFromPrevState):
+    global feedbackReceived
+    if(infoFromPrevState['state_cameFrom'] == "ASKING_FOR_FEEDBACK"):
+        print("Do you have any feedback for me?");
+
+    if(feedbackReceived is None):
+        nextState = "WAITING_FOR_FEEDBACK";
+        infoForNextState = {'state_cameFrom': "WAITING_FOR_FEEDBACK"};
+    else:
+        print('Got feedback');
+        infoForNextState = feedbackReceived;
+        feedbackReceived = None;
+        nextState = "RESPONDING_TO_FEEDBACK";
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState    
+
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
 wordsLearnt = [];
@@ -522,10 +608,12 @@ if __name__ == "__main__":
         plt.ion(); #to plot one shape at a time
          
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
-    feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
-
+    #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
+    feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, onFeedbackReceived);
+    
     #listen for words to write
-    words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
+    #words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
+    words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, onWordReceived);
     
     #listen for request to clear screen (from tablet)
     clear_subscriber = rospy.Subscriber(CLEAR_SCREEN_TOPIC, Empty, clearScreenManager);
@@ -534,7 +622,8 @@ if __name__ == "__main__":
     test_subscriber = rospy.Subscriber(TEST_TOPIC, Empty, testManager);
     
     #listen for when to stop
-    stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
+    #stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
+    stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, onStopRequestReceived); 
     
     #listen for user-drawn shapes
     shape_subscriber = rospy.Subscriber(USER_DRAW_SHAPES_TOPIC, Path, read_traj_msg); 
@@ -577,5 +666,19 @@ if __name__ == "__main__":
         wordMessageManager(message);
     else:
         print('Waiting for word to write');
-
+    
+    
+    stateMachine = StateMachine();
+    stateMachine.add_state("START_INTERACTION", startInteraction);
+    stateMachine.add_state("WAITING_FOR_WORD", waitForWord);
+    stateMachine.add_state("RESPONDING_TO_NEW_WORD", wordMessageManager);
+    stateMachine.add_state("ASKING_FOR_FEEDBACK", askForFeedback);
+    stateMachine.add_state("WAITING_FOR_FEEDBACK", waitForFeedback);
+    stateMachine.add_state("RESPONDING_TO_FEEDBACK", feedbackManager);
+    stateMachine.add_state("STOPPING", stopManager);
+    stateMachine.add_state("EXIT", None, end_state=True);
+    stateMachine.set_start("START_INTERACTION");
+    infoForStartState = None;
+    stateMachine.run(infoForStartState);
+    
     rospy.spin();
