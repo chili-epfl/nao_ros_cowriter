@@ -9,6 +9,7 @@ class StateMachine:
         self.handlers = {}
         self.startState = None
         self.endStates = []
+        self.currentState = None
 
     def add_state(self, name, handler, end_state=0):
         name = upper(name)
@@ -18,6 +19,9 @@ class StateMachine:
 
     def set_start(self, name):
         self.startState = upper(name)
+    
+    def get_state(self):
+        return self.currentState
 
     def run(self, cargo):
         try:
@@ -30,7 +34,8 @@ class StateMachine:
 
         while 1:
             (newState, cargo) = handler(cargo)
-            if upper(newState) in self.endStates:
-                break: 
-            else
-                handler = self.handlers[upper(newState)]
+            self.currentState = upper(newState)
+            if self.currentState in self.endStates:
+                break
+            else:
+                handler = self.handlers[self.currentState]
