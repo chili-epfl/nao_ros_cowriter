@@ -20,16 +20,28 @@ class Watchdog:
         
         print('Starting new timer');
         self.responsive = True;
+        self.running = True;
         self.timer = Timer(self.timeout_sec, self.handler);
         self.timer.start();
     
     def onClear(self, message):
         self.timer.cancel(); #clear timer
+        if(self.running):
+            if(not self.responsive):
+                print('Re-connection');
+            self.responsive = True;
+            self.timer = Timer(self.timeout_sec, self.handler); #schedule new timeout
+            self.timer.start();
         
-        if(not self.responsive):
-            print('Re-connection');
+    def stop(self):
+        self.timer.cancel(); #stop timer
+        self.running = False;
+        print('Stopped');
+        
+    def restart(self):
         self.responsive = True;
-        self.timer = Timer(self.timeout_sec, self.handler); #schedule new timeout
+        self.running = True;
+        self.timer = Timer(self.timeout_sec, self.handler);
         self.timer.start();
     
     def defaultHandler(self):
@@ -37,7 +49,13 @@ class Watchdog:
         self.responsive = False;
         
     def isResponsive(self):
-        return self.responsive
+        if(self.running):
+            return self.responsive
+        else:
+            raise RuntimeError("responsiveness cannot be determined while the watchdog is not running");
+    
+    def isRunning(self):
+        return self.running;
         
 class WatchdogClearer:
     """Publishes watchdog timer clears over a topic.
