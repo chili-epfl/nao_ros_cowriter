@@ -319,7 +319,7 @@ def publishSimulatedFeedback(bestShape_index, shapeType_index, doGroupwiseCompar
         else:
             names = ('old', 'new');
             feedback.data = names[bestShape_index];            
-        feedbackManager(feedback);
+        onFeedbackReceived(feedback);
         
 ### ------------------------------------------------------ PUBLISH SHAPE        
 def publishShapeAndWaitForFeedback(shape):
@@ -347,7 +347,7 @@ def publishShapeAndWaitForFeedback(shape):
     
     return trajStartPosition
             
-def feedbackManager(stringReceived):
+def respondToFeedback(stringReceived):
     print('------------------------------------------ RESPONDING_TO_FEEDBACK'); 
     global shapeFinished #todo: make class attribute
     
@@ -439,11 +439,21 @@ def feedbackManager(stringReceived):
             else:    
                 nextState = "ASKING_FOR_FEEDBACK";
                 infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK",'centre': centre};
+    global wordReceived
+    if(wordReceived is not None):
+        infoForNextState = wordReceived;
+        wordReceived = None;
+        nextState = "RESPONDING_TO_NEW_WORD";
+    global testRequestReceived
+    if(testRequestReceived):
+        infoForNextState = 0;
+        testRequestReceived = None;
+        nextState = "RESPONDING_TO_TEST_CARD";
     if(stopRequestReceived):
         nextState = "STOPPING";
     return nextState, infoForNextState
         
-def wordMessageManager(message):
+def respondToNewWord(message):
     print('------------------------------------------ RESPONDING_TO_NEW_WORD'); 
     global shapeFinished, wordManager #@todo make class attribute 
     print("Cheers");
@@ -493,6 +503,11 @@ def wordMessageManager(message):
         infoForNextState = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
+    global testRequestReceived
+    if(testRequestReceived):
+        infoForNextState = 0;
+        testRequestReceived = None;
+        nextState = "RESPONDING_TO_TEST_CARD";
     if(stopRequestReceived):
         nextState = "STOPPING";
     return nextState, infoForNextState
@@ -521,20 +536,35 @@ def askForFeedback(infoFromPrevState):
         infoForNextState = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
+    global testRequestReceived;
+    if(wordReceived is not None):
+        infoForNextState = 0;
+        testRequestReceived = None;
+        nextState = "RESPONDING_TO_TEST_CARD";
     if(stopRequestReceived):
         nextState = "STOPPING";
     return nextState, infoForNextState
 
-def testManager(message):
+testRequestReceived = False;
+def onTestRequestReceived(message):
+    global testRequestReceived
+    testRequestReceived = True;
+    
+def respondToTestCard(infoFromPrevState):
+    print('------------------------------------------ RESPONDING_TO_TEST_CARD');
+    print('Show me a test word');
     if(naoSpeaking):
         textToSpeech.say('Ok, test time. I\'ll try my best.');
-
+    nextState = "WAITING_FOR_WORD";
+    infoForNextState = {'state_cameFrom': "RESPONDING_TO_TEST_CARD"};
+    return nextState, infoForNextState
+    
 stopRequestReceived = False;
 def onStopRequestReceived(message):
     global stopRequestReceived
     stopRequestReceived = True;
     
-def stopManager(infoFromPrevState):
+def stopInteraction(infoFromPrevState):
     print('------------------------------------------ STOPPING');
     if(naoSpeaking):
         textToSpeech.say('Thank you for your help.');   
@@ -546,7 +576,7 @@ def stopManager(infoFromPrevState):
     rospy.signal_shutdown('Interaction exited');
     return nextState, infoForNextState
           
-def clearScreenManager(message):
+def onClearScreenReceived(message):
     print('Clearing display');
     try:
         clear_all_shapes = rospy.ServiceProxy('clear_all_shapes', clearAllShapes);
@@ -558,6 +588,7 @@ def clearScreenManager(message):
 def startInteraction(infoFromPrevState):
     print('------------------------------------------ STARTING_INTERACTION');
     print('Hey I\'m Nao');
+    print("Do you have any words for me to write?");
     if(naoSpeaking):
         textToSpeech.say("Hey. Please show me a word to practice.");
     nextState = "WAITING_FOR_WORD";
@@ -568,7 +599,7 @@ def startInteraction(infoFromPrevState):
 
 def onWordReceived(message):
     global wordReceived 
-    print('------------');
+    #print('------------');
     wordReceived = message;  
 
 def waitForWord(infoFromPrevState):
@@ -576,13 +607,13 @@ def waitForWord(infoFromPrevState):
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_WORD"):
         print('------------------------------------------ WAITING_FOR_WORD');
     if(infoFromPrevState['state_cameFrom'] == "STARTING_INTERACTION"):
-        print("Do you have any words for me to write?");
+        pass
     
     if(wordReceived is None):
         nextState = "WAITING_FOR_WORD";
         infoForNextState = {'state_cameFrom': "WAITING_FOR_WORD"};
     else:
-        print('Got message');
+        #print('Got message');
         infoForNextState = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
@@ -603,8 +634,8 @@ def waitForFeedback(infoFromPrevState):
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_FEEDBACK"):
         print('------------------------------------------ WAITING_FOR_FEEDBACK');
         
-    if(infoFromPrevState['state_cameFrom'] == "ASKING_FOR_FEEDBACK"):
-        print("Do you have any feedback for me?");
+    #if(infoFromPrevState['state_cameFrom'] == "ASKING_FOR_FEEDBACK"):
+    #    print("Do you have any feedback for me?");
 
     if(feedbackReceived is None):
         nextState = "WAITING_FOR_FEEDBACK";
@@ -619,6 +650,11 @@ def waitForFeedback(infoFromPrevState):
         infoForNextState = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
+    global testRequestReceived
+    if(testRequestReceived):
+        infoForNextState = 0;
+        testRequestReceived = None;
+        nextState = "RESPONDING_TO_TEST_CARD";
     if(stopRequestReceived):
         nextState = "STOPPING";
     return nextState, infoForNextState    
@@ -646,21 +682,18 @@ if __name__ == "__main__":
         plt.ion(); #to plot one shape at a time
          
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
-    #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, feedbackManager);
     feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, onFeedbackReceived);
     
     #listen for words to write
-    #words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, wordMessageManager);
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, onWordReceived);
     
     #listen for request to clear screen (from tablet)
-    clear_subscriber = rospy.Subscriber(CLEAR_SCREEN_TOPIC, Empty, clearScreenManager);
+    clear_subscriber = rospy.Subscriber(CLEAR_SCREEN_TOPIC, Empty, onClearScreenReceived);
     
     #listen for test time
-    test_subscriber = rospy.Subscriber(TEST_TOPIC, Empty, testManager);
+    test_subscriber = rospy.Subscriber(TEST_TOPIC, Empty, onTestRequestReceived);
     
     #listen for when to stop
-    #stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, stopManager); 
     stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, onStopRequestReceived); 
     
     #listen for user-drawn shapes
@@ -673,12 +706,9 @@ if __name__ == "__main__":
     rospy.sleep(1.0);   #Allow some time for the subscribers to do their thing, 
                         #or the first message will be missed (eg. first traj on tablet, first clear request locally)
     
-    from watchdog import Watchdog
+    from watchdog import Watchdog #TODO: Make a ROS server so that *everyone* can access the connection statuses
     tabletWatchdog = Watchdog('watchdog_clear/tablet', 2);
     #naoWatchdog = Watchdog('watchdo_clear/nao', 2);
-    
-    tabletWatchdog.stop();
-    tabletWatchdog.isResponsive();
     
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
@@ -704,7 +734,6 @@ if __name__ == "__main__":
     if(wordToLearn is not None):
         message = String();
         message.data = wordToLearn;
-        #wordMessageManager(message);
         onWordReceived(message);
     else:
         print('Waiting for word to write');
@@ -713,11 +742,12 @@ if __name__ == "__main__":
     stateMachine = StateMachine();
     stateMachine.add_state("STARTING_INTERACTION", startInteraction);
     stateMachine.add_state("WAITING_FOR_WORD", waitForWord);
-    stateMachine.add_state("RESPONDING_TO_NEW_WORD", wordMessageManager);
+    stateMachine.add_state("RESPONDING_TO_NEW_WORD", respondToNewWord);
     stateMachine.add_state("ASKING_FOR_FEEDBACK", askForFeedback);
     stateMachine.add_state("WAITING_FOR_FEEDBACK", waitForFeedback);
-    stateMachine.add_state("RESPONDING_TO_FEEDBACK", feedbackManager);
-    stateMachine.add_state("STOPPING", stopManager);
+    stateMachine.add_state("RESPONDING_TO_FEEDBACK", respondToFeedback);
+    stateMachine.add_state("RESPONDING_TO_TEST_CARD", respondToTestCard);
+    stateMachine.add_state("STOPPING", stopInteraction);
     stateMachine.add_state("EXIT", None, end_state=True);
     stateMachine.set_start("STARTING_INTERACTION");
     infoForStartState = None;
