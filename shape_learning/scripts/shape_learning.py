@@ -28,7 +28,7 @@ from std_msgs.msg import String, Empty
 from state_machine import StateMachine
 
 #Nao parameters
-NAO_IP = '192.168.1.10';
+NAO_IP = '192.168.1.2';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
 naoConnected = False;
 naoSpeaking = False;
@@ -160,14 +160,15 @@ def read_traj_msg(message):
         if(args.show):
             plt.figure(1);
             ShapeModeler.normaliseAndShowShape(shape);
-        
+        shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
+        print("Received demo for " + shapeType);
         shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
-        publishShapeAndWaitForFeedback(shape, 'u', shapeIndex_demoFor, 0, 0); #TO DO ..obviously, don't hard-code shapeType
+        publishShapeAndWaitForFeedback(shape);
     
 def make_traj_msg(shape, shapeCentre, headerString):      
     
     traj = Path();
-    traj.header.frame_id = headerString;
+    traj.header.frame_id = FRAME#headerString;
     traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
     shape = ShapeModeler.normaliseShapeHeight(shape);
     numPointsInShape = len(shape)/2;   
@@ -320,24 +321,24 @@ def publishSimulatedFeedback(bestShape_index, shapeType_index, doGroupwiseCompar
         feedbackManager(feedback);
         
 ### ------------------------------------------------------ PUBLISH SHAPE        
-def publishShapeAndWaitForFeedback(shape, shapeType, shapeType_code, param, paramValue):
+def publishShapeAndWaitForFeedback(shape):
     trajStartPosition = Point();
     if(simulatedFeedback):
         if(args.show):
             plt.figure(1);
-            ShapeModeler.normaliseAndShowShape(shape);
+            ShapeModeler.normaliseAndShowShape(shape.path);
             time.sleep(1.3); 
     else:
        
         try:
             display_new_shape = rospy.ServiceProxy('display_new_shape', displayNewShape);
-            response = display_new_shape(shape_type_code = shapeType_code);
+            response = display_new_shape(shape_type_code = shape.shapeType_code);
             shapeCentre = numpy.array([response.location.x, response.location.y]);
         except rospy.ServiceException, e:
             print "Service call failed: %s"%e
         
-        headerString = shapeType+'_'+str(param)+'_'+str(paramValue);
-        traj = make_traj_msg(shape, shapeCentre, headerString);
+        headerString = shape.shapeType+'_'+str(shape.paramsToVary)+'_'+str(shape.paramValues);
+        traj = make_traj_msg(shape.path, shapeCentre, headerString);
         if(naoConnected):
             trajStartPosition = traj.poses[0].pose.position;
             nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
@@ -392,9 +393,9 @@ def feedbackManager(stringReceived):
                 rospy.sleep(0.4);
                 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
             
-            [numItersConverged, newShape, shapeType, shapeType_code, param, paramValue] = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
+            [numItersConverged, newShape] = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
                        
-            centre = publishShapeAndWaitForFeedback(newShape, shapeType, shapeType_code, param, paramValue);
+            centre = publishShapeAndWaitForFeedback(newShape);
             if(simulatedFeedback and numItersConverged == 0):
                 bestShape_index = wordManager.generateSimulatedFeedback(shapeIndex_messageFor, newShape, paramValue);
                 publishSimulatedFeedback(bestShape_index, shapeIndex_messageFor,True);
@@ -460,9 +461,9 @@ def wordMessageManager(message):
     
     #start learning        
     for i in range(len(wordToLearn)):
-        [shape, shapeType, shapeType_code, paramToVary, paramValue] = wordManager.startNextShapeLearner();
-        print('Sending '+shapeType);
-        centre = publishShapeAndWaitForFeedback(shape, shapeType, shapeType_code, paramToVary, paramValue);
+        shape = wordManager.startNextShapeLearner();
+        print('Sending '+shape.shapeType);
+        centre = publishShapeAndWaitForFeedback(shape);
         if(simulatedFeedback): #pretend first one isn't good enough
             publishSimulatedFeedback(0,shapeType_code,True); 
 

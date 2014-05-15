@@ -10,10 +10,13 @@ from shape_modeler import ShapeModeler
 from shape_learner import ShapeLearner
 
 import numpy          
+from recordtype import recordtype #for mutable namedtuple (dict might also work)
          
 boundExpandingAmount = 0.2;
+
+Shape = recordtype('Shape',['path', 'shapeID', 'shapeType', 'shapeType_code', 'paramsToVary', 'paramValues']);
+
 ###--------------------------------------------- WORD LEARNING FUNCTIONS
-# @todo make methods of a class
 class ShapeLearnerManager:
     def __init__(self, generateSettingsFunction):
         self.generateSettings = generateSettingsFunction;
@@ -67,13 +70,16 @@ class ShapeLearnerManager:
             shapeType = self.currentCollection[self.nextShapeLearnerToBeStarted];
             shapeType_code = self.nextShapeLearnerToBeStarted;
             shape_index = self.indexOfShapeInCurrentCollection(shapeType);
-            [shape, paramValue] = self.shapeLearners_currentCollection[shape_index].startLearning();
-            paramToVary = self.settings_shapeLearners_currentCollection[shape_index].paramsToVary[0]; #USE ONLY FIRST PARAM FOR SELF-LEARNING ALGORITHM ATM
+            [path, paramValues] = self.shapeLearners_currentCollection[shape_index].startLearning();
+            paramsToVary = self.settings_shapeLearners_currentCollection[shape_index].paramsToVary;
             self.nextShapeLearnerToBeStarted += 1;
-            return shape, shapeType, shapeType_code, paramToVary, paramValue;
+            shape = Shape(path=path, shapeID=0, shapeType=shapeType, 
+                shapeType_code=shapeType_code, paramsToVary=paramsToVary, paramValues=paramValues);
+
+            return shape;
         else:
             print('Don\'t know what shape learner you want me to start...');
-            return -1, -1, -1, -1, -1;
+            return -1;
 
     def feedbackManager(self, shapeIndex_messageFor, bestShape_index, noNewShape):
         shape_messageFor = self.shapeAtIndexInCurrentCollection(shapeIndex_messageFor);
@@ -86,9 +92,11 @@ class ShapeLearnerManager:
                 self.shapeLearners_currentCollection[shapeIndex_messageFor].respondToFeedback(bestShape_index);
                 return 1;
             else:               
-                [numItersConverged, newShape, newParamValue] = self.shapeLearners_currentCollection[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
-            paramToVary = self.settings_shapeLearners_currentCollection[shapeIndex_messageFor].paramsToVary[0];
-            return numItersConverged, newShape, shape_messageFor, shapeIndex_messageFor, paramToVary, newParamValue;#USE ONLY FIRST PARAM FOR SELF-LEARNING ALGORITHM ATM
+                [numItersConverged, newPath, newParamValues] = self.shapeLearners_currentCollection[shapeIndex_messageFor].generateNewShapeGivenFeedback(bestShape_index);
+            paramsToVary = self.settings_shapeLearners_currentCollection[shapeIndex_messageFor].paramsToVary;
+            shape = Shape(path=newPath, shapeID=[], shapeType=shape_messageFor, 
+                shapeType_code=shapeIndex_messageFor, paramsToVary=paramsToVary, paramValues=newParamValues);
+            return numItersConverged, shape;
     
     def respondToDemonstration(self, shapeIndex_messageFor, shape):
         shape_messageFor = self.shapeAtIndexInAllShapesLearnt(shapeIndex_messageFor);
@@ -96,7 +104,11 @@ class ShapeLearnerManager:
             print('Ignoring demonstration because not for valid shape type');
             return -1;
         else:
-            return self.shapeLearners_currentCollection[shapeIndex_messageFor].respondToDemonstration(shape);
+            [newPath, newParamValues] = self.shapeLearners_currentCollection[shapeIndex_messageFor].respondToDemonstration(shape);
+            paramsToVary = self.settings_shapeLearners_currentCollection[shapeIndex_messageFor].paramsToVary;
+            shape = Shape(path=newPath, shapeID=[], shapeType=shape_messageFor, 
+                shapeType_code=shapeIndex_messageFor, paramsToVary=paramsToVary, paramValues=newParamValues);
+            return shape
     
     def indexOfShapeInCurrentCollection(self, shapeType):
         try:
