@@ -64,8 +64,7 @@ class WatchdogClearer:
         self.clearTopic = clearTopic;
         self.timeBetweenClears_sec = timeBetweenClears_sec;
         self.publisher = rospy.Publisher(self.clearTopic, Empty);
-        
-        print('Starting new timer');
+
         self.timer = Timer(self.timeBetweenClears_sec, self.clearWatchdog);
         self.timer.start();
     
