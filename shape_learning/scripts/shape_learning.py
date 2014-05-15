@@ -82,7 +82,7 @@ minTimeBetweenTouches = 0.1  #Seconds allowed between touches for the second one
 
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
-USER_DRAW_SHAPES_TOPIC = 'user_shapes';
+USER_DRAWN_SHAPES_TOPIC = 'user_shapes';
 
 WORDS_TOPIC = 'words_to_write';
 TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
@@ -103,7 +103,10 @@ else:
     rospy.init_node("shape_learner");
 
 ### ------------------------------------------------------ MESSAGE MAKER
-def read_traj_msg(message):
+
+demoShapeReceived = None;
+def onUserDrawnShapeReceived(message):
+    global demoShapeReceived
     x_shape = [];
     y_shape = [];
     for poseStamped in message.poses:
@@ -115,56 +118,73 @@ def read_traj_msg(message):
     if(numPointsInShape<15):
         print('Ignoring shape because it wasn\'t long enough');
     else:
-        #make shape have the same number of points as the shape_modeler
-        t_current = numpy.linspace(0, 1, numPointsInShape);
-        t_desired = numpy.linspace(0, 1, numPoints_shapeModeler);
-        f = interpolate.interp1d(t_current, x_shape, kind='cubic');
-        x_shape = f(t_desired);
-        f = interpolate.interp1d(t_current, y_shape, kind='cubic');
-        y_shape = f(t_desired);
-           
         shape = [];
-        shape[0:numPoints_shapeModeler] = x_shape;
-        shape[numPoints_shapeModeler:] = y_shape;
+        shape[0:numPointsInShape] = x_shape;
+        shape[numPointsInShape:] = y_shape;
         
-        location = ShapeModeler.getShapeCentre(numpy.array(shape));
-        try:
-            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
-            request = shapeAtLocationRequest();
-            request.location.x = location[0];
-            request.location.y = location[1];
-            response = shape_at_location(request);
-            shapeIndex_demoFor = response.shape_type_code;
-            #TODO: map to closest shape on screen
-            '''
-            closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
-            request = closestShapeToLocationRequest();
-            request.location.x = location[0];
-            request.location.y = location[1];
-            response = closest_shape_to_location(request);
-            shapeIndex_demoFor = response.shape_type_code;
-            '''
-            
-            '''
-            index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
-            request = indexOfLocationRequest();
-            request.location.x = location[0];
-            request.location.y = location[1];
-            response = index_of_location(request);
-            shapeIndex_demoFor = response.row;
-            '''
-        except rospy.ServiceException, e:
-            print "Service call failed: %s"%e
+        demoShapeReceived = shape; #TODO: ONLY REGISTER THIS AT THE APPROPRIATE TIME
+    
+def respondToDemonstration(infoFromPrevState):
+    print('------------------------------------------ RESPONDING_TO_DEMONSTRATION');
+    shape = infoFromPrevState['demoShapeReceived'];
+    numPointsInShape = len(shape)/2;
+    x_shape = shape[0:numPointsInShape];
+    y_shape = shape[numPointsInShape:];
+    
+    #make shape have the same number of points as the shape_modeler
+    t_current = numpy.linspace(0, 1, numPointsInShape);
+    t_desired = numpy.linspace(0, 1, numPoints_shapeModeler);
+    f = interpolate.interp1d(t_current, x_shape, kind='cubic');
+    x_shape = f(t_desired);
+    f = interpolate.interp1d(t_current, y_shape, kind='cubic');
+    y_shape = f(t_desired);
+       
+    shape = [];
+    shape[0:numPoints_shapeModeler] = x_shape;
+    shape[numPoints_shapeModeler:] = y_shape;
+    
+    location = ShapeModeler.getShapeCentre(numpy.array(shape));
+    try:
+        shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
+        request = shapeAtLocationRequest();
+        request.location.x = location[0];
+        request.location.y = location[1];
+        response = shape_at_location(request);
+        shapeIndex_demoFor = response.shape_type_code;
+        #TODO: map to closest shape on screen
+        '''
+        closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
+        request = closestShapeToLocationRequest();
+        request.location.x = location[0];
+        request.location.y = location[1];
+        response = closest_shape_to_location(request);
+        shapeIndex_demoFor = response.shape_type_code;
+        '''
+        
+        '''
+        index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
+        request = indexOfLocationRequest();
+        request.location.x = location[0];
+        request.location.y = location[1];
+        response = index_of_location(request);
+        shapeIndex_demoFor = response.row;
+        '''
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
 
-        shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
-        shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
-        if(args.show):
-            plt.figure(1);
-            ShapeModeler.normaliseAndShowShape(shape);
-        shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
-        print("Received demo for " + shapeType);
-        shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
-        publishShapeAndWaitForFeedback(shape);
+    shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
+    shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
+    if(args.show):
+        plt.figure(1);
+        ShapeModeler.normaliseAndShowShape(shape);
+    shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
+    print("Received demo for " + shapeType);
+    shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
+    centre = publishShapeAndWaitForFeedback(shape);
+        
+    nextState = "ASKING_FOR_FEEDBACK";
+    infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'centre': centre};
+    return nextState, infoForNextState
     
 def make_traj_msg(shape, shapeCentre, headerString):      
     
@@ -435,7 +455,7 @@ def respondToFeedback(stringReceived):
                 #change bounds back to the initial ones to hopefully get un-stuck
                 wordManager.resetParameterBounds(shapeIndex_messageFor);
                 nextState = "WAITING_FOR_FEEDBACK";
-                infoForNextState = 0;
+                infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK"};
             else:    
                 nextState = "ASKING_FOR_FEEDBACK";
                 infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK",'centre': centre};
@@ -529,6 +549,13 @@ def askForFeedback(infoFromPrevState):
             rospy.sleep(0.7);
             nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
             nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
+    elif(infoFromPrevState['state_cameFrom'] == "RESPONDING_TO_DEMONSTRATION"):
+        print('Asking for feedback on demo response...');
+        if(naoConnected):
+            lookAndAskForFeedback("How about now?");
+            rospy.sleep(0.7);
+            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again  
     nextState = "WAITING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "ASKING_FOR_FEEDBACK"};
     global wordReceived;
@@ -548,6 +575,7 @@ def askForFeedback(infoFromPrevState):
 testRequestReceived = False;
 def onTestRequestReceived(message):
     global testRequestReceived
+    #TODO: DON'T RESPOND TO TEST CARD UNTIL YOU HAVE LEARNT SOMETHING
     testRequestReceived = True;
     
 def respondToTestCard(infoFromPrevState):
@@ -599,7 +627,6 @@ def startInteraction(infoFromPrevState):
 
 def onWordReceived(message):
     global wordReceived 
-    #print('------------');
     wordReceived = message;  
 
 def waitForWord(infoFromPrevState):
@@ -630,34 +657,43 @@ def onFeedbackReceived(message):
 
 feedbackReceived = None;
 def waitForFeedback(infoFromPrevState):
-    global feedbackReceived
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_FEEDBACK"):
         print('------------------------------------------ WAITING_FOR_FEEDBACK');
-        
-    #if(infoFromPrevState['state_cameFrom'] == "ASKING_FOR_FEEDBACK"):
-    #    print("Do you have any feedback for me?");
 
-    if(feedbackReceived is None):
-        nextState = "WAITING_FOR_FEEDBACK";
-        infoForNextState = {'state_cameFrom': "WAITING_FOR_FEEDBACK"};
-    else:
-        print('Got feedback');
+    #default behaviour is to loop
+    nextState = "WAITING_FOR_FEEDBACK";
+    infoForNextState = {'state_cameFrom': "WAITING_FOR_FEEDBACK"};
+    
+    global feedbackReceived    
+    if(feedbackReceived is not None):
         infoForNextState = feedbackReceived;
         feedbackReceived = None;
         nextState = "RESPONDING_TO_FEEDBACK";
+        
+    global demoShapeReceived    
+    if(demoShapeReceived is not None):
+        infoForNextState = {'demoShapeReceived': demoShapeReceived}; #'state_cameFrom': "WAITING_FOR_FEEDBACK"
+        demoShapeReceived = None;
+        nextState = "RESPONDING_TO_DEMONSTRATION";    
+        
     global wordReceived
     if(wordReceived is not None):
         infoForNextState = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
+        
     global testRequestReceived
     if(testRequestReceived):
         infoForNextState = 0;
         testRequestReceived = None;
         nextState = "RESPONDING_TO_TEST_CARD";
+        
     if(stopRequestReceived):
         nextState = "STOPPING";
     return nextState, infoForNextState    
+
+#def respondToTabletDisconnect(infoFromPrevState):
+ #   infoForNextState = {'state_toReturnTo': "PUBLISHING_LETTER"}
 
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
@@ -697,7 +733,7 @@ if __name__ == "__main__":
     stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, onStopRequestReceived); 
     
     #listen for user-drawn shapes
-    shape_subscriber = rospy.Subscriber(USER_DRAW_SHAPES_TOPIC, Path, read_traj_msg); 
+    shape_subscriber = rospy.Subscriber(USER_DRAWN_SHAPES_TOPIC, Path, onUserDrawnShapeReceived); 
         
     #initialise display manager for shapes (manages positioning of shapes)
     from display_manager.srv import *
@@ -746,7 +782,10 @@ if __name__ == "__main__":
     stateMachine.add_state("ASKING_FOR_FEEDBACK", askForFeedback);
     stateMachine.add_state("WAITING_FOR_FEEDBACK", waitForFeedback);
     stateMachine.add_state("RESPONDING_TO_FEEDBACK", respondToFeedback);
+    stateMachine.add_state("RESPONDING_TO_DEMONSTRATION", respondToDemonstration);
     stateMachine.add_state("RESPONDING_TO_TEST_CARD", respondToTestCard);
+    #stateMachine.add_state("RESPONDING_TO_TABLET_DISCONNECT", respondToTabletDisconnect);
+    #stateMachine.add_state("WAITING_FOR_TABLET_TO_RECONNECT", waitForTabletToReconnect);
     stateMachine.add_state("STOPPING", stopInteraction);
     stateMachine.add_state("EXIT", None, end_state=True);
     stateMachine.set_start("STARTING_INTERACTION");
