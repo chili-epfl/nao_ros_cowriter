@@ -180,11 +180,16 @@ def respondToDemonstration(infoFromPrevState):
     shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
     print("Received demo for " + shapeType);
     shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
-    centre = publishShapeAndWaitForFeedback(shape);
+    nextState = "PUBLISHING_LETTER";
+    infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shape': shape};
+    return nextState, infoForNextState
+    '''
+    centre = publishShape(shape);
         
     nextState = "ASKING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'centre': centre};
     return nextState, infoForNextState
+    '''
     
 def make_traj_msg(shape, shapeCentre, headerString):      
     
@@ -342,7 +347,14 @@ def publishSimulatedFeedback(bestShape_index, shapeType_index, doGroupwiseCompar
         onFeedbackReceived(feedback);
         
 ### ------------------------------------------------------ PUBLISH SHAPE        
-def publishShapeAndWaitForFeedback(shape):
+def publishShape(infoFromPrevState):
+    print('------------------------------------------ PUBLISHING_LETTER'); 
+    if(infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
+        shapesToPublish = infoFromPrevState['shapesToPublish'];
+        shape = shapesToPublish.pop(0); #publish next remaining shape (and remove from list)
+    else:
+        shape = infoFromPrevState['shape'];
+        
     trajStartPosition = Point();
     if(simulatedFeedback):
         if(args.show):
@@ -365,8 +377,37 @@ def publishShapeAndWaitForFeedback(shape):
             nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
         pub_traj.publish(traj);   
     
-    return trajStartPosition
-            
+    nextState = "WAITING_FOR_LETTER_TO_FINISH";
+    state_toReturnTo = None;
+    infoForNextState = {'state_cameFrom': infoFromPrevState['state_cameFrom'], 'state_toReturnTo': state_toReturnTo, 'centre': trajStartPosition};
+    if(infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
+        if(len(shapesToPublish) > 0):
+            state_toReturnTo = 'PUBLISHING_LETTER'; #come back to publish the remaining shapes
+            infoForNextState = {'state_cameFrom': infoFromPrevState['state_cameFrom'], 
+            'state_toReturnTo': state_toReturnTo, 'shapesToPublish': shapesToPublish, 'centre': trajStartPosition};
+    
+    return nextState, infoForNextState
+    
+def waitForShapeToFinish(infoFromPrevState):
+    print('------------------------------------------ WAITING_FOR_LETTER_TO_FINISH');
+    shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
+    
+    global shapeFinished
+    while(not shapeFinished and tabletWatchdog.isResponsive()):
+        rospy.sleep(0.1);
+    shape_finished_subscriber.unregister();
+    shapeFinished = False;
+    
+    nextState = "ASKING_FOR_FEEDBACK";
+    if(infoFromPrevState['state_toReturnTo'] is not None):
+        nextState = infoFromPrevState['state_toReturnTo'];
+    infoForNextState = {'state_cameFrom': infoFromPrevState['state_cameFrom'], 'centre': infoFromPrevState['centre']};
+    
+    if(nextState == 'PUBLISHING_LETTER' and infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
+        infoForNextState['shapesToPublish'] = infoFromPrevState['shapesToPublish'];
+    
+    return nextState, infoForNextState
+          
 def respondToFeedback(stringReceived):
     print('------------------------------------------ RESPONDING_TO_FEEDBACK'); 
     global shapeFinished #todo: make class attribute
@@ -420,7 +461,13 @@ def respondToFeedback(stringReceived):
                 #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
             
             [numItersConverged, newShape] = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
-                       
+            
+            if(numItersConverged == 0):
+                nextState = "PUBLISHING_LETTER";
+                infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK",'shape': newShape};
+            else:
+                pass #TODO handle convergence
+            '''           
             centre = publishShapeAndWaitForFeedback(newShape);
             if(simulatedFeedback and numItersConverged == 0):
                 bestShape_index = wordManager.generateSimulatedFeedback(shapeIndex_messageFor, newShape, paramValue);
@@ -459,6 +506,7 @@ def respondToFeedback(stringReceived):
             else:    
                 nextState = "ASKING_FOR_FEEDBACK";
                 infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK",'centre': centre};
+                '''
     global wordReceived
     if(wordReceived is not None):
         infoForNextState = wordReceived;
@@ -492,10 +540,12 @@ def respondToNewWord(message):
     pub_clear.publish(Empty());
     rospy.sleep(0.5);
     
-    #start learning        
+    #start learning    
+    shapesToPublish = [];    
     for i in range(len(wordToLearn)):
         shape = wordManager.startNextShapeLearner();
-        print('Sending '+shape.shapeType);
+        shapesToPublish.append(shape);
+        '''print('Sending '+shape.shapeType);
         centre = publishShapeAndWaitForFeedback(shape);
         if(simulatedFeedback): #pretend first one isn't good enough
             publishSimulatedFeedback(0,shapeType_code,True); 
@@ -515,9 +565,12 @@ def respondToNewWord(message):
                 print('Error connecting to tablet');
             else:
                 print('Shape finished.');
-    
     nextState = "ASKING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'centre': centre};
+    '''
+    nextState = "PUBLISHING_LETTER";
+    infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
+
     global wordReceived
     if(wordReceived is not None):
         infoForNextState = wordReceived;
@@ -779,6 +832,8 @@ if __name__ == "__main__":
     stateMachine.add_state("STARTING_INTERACTION", startInteraction);
     stateMachine.add_state("WAITING_FOR_WORD", waitForWord);
     stateMachine.add_state("RESPONDING_TO_NEW_WORD", respondToNewWord);
+    stateMachine.add_state("PUBLISHING_LETTER", publishShape);
+    stateMachine.add_state("WAITING_FOR_LETTER_TO_FINISH", waitForShapeToFinish);
     stateMachine.add_state("ASKING_FOR_FEEDBACK", askForFeedback);
     stateMachine.add_state("WAITING_FOR_FEEDBACK", waitForFeedback);
     stateMachine.add_state("RESPONDING_TO_FEEDBACK", respondToFeedback);
