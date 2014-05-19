@@ -397,20 +397,25 @@ def waitForShapeToFinish(infoFromPrevState):
         rospy.sleep(0.1);
     shape_finished_subscriber.unregister();
     shapeFinished = False;
-    
-    nextState = "ASKING_FOR_FEEDBACK";
+
+    nextState = 'WAITING_FOR_ROBOT_TO_CONNECT'; #wait for the robot to connect before...
+    state_goTo = "ASKING_FOR_FEEDBACK";         #going to next state 
+      
     if(infoFromPrevState['state_toReturnTo'] is not None):
-        nextState = infoFromPrevState['state_toReturnTo'];
-    infoForNextState = {'state_cameFrom': infoFromPrevState['state_cameFrom'], 'centre': infoFromPrevState['centre']};
+        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';         #wait for the robot to connect before...
+        state_goTo = infoFromPrevState['state_toReturnTo']; #going to next state 
+    infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': infoFromPrevState['state_cameFrom'], 'centre': infoFromPrevState['centre']};
     
-    if(nextState == 'PUBLISHING_LETTER' and infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
-        infoForNextState['shapesToPublish'] = infoFromPrevState['shapesToPublish'];
+    if(state_goTo == 'PUBLISHING_LETTER' and infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
+        infoForNextState['shapesToPublish'] = infoFromPrevState['shapesToPublish']; #include the shapes which are remaining in the message
     
     return nextState, infoForNextState
           
-def respondToFeedback(stringReceived):
+def respondToFeedback(infoFromPrevState):
     print('------------------------------------------ RESPONDING_TO_FEEDBACK'); 
     global shapeFinished #todo: make class attribute
+    
+    stringReceived = infoFromPrevState['feedbackReceived'];
     
     nextState = "WAITING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "ASKING_FOR_FEEDBACK"};
@@ -509,21 +514,21 @@ def respondToFeedback(stringReceived):
                 '''
     global wordReceived
     if(wordReceived is not None):
-        infoForNextState = wordReceived;
+        infoForNextState['wordReceived'] = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
     global testRequestReceived
     if(testRequestReceived):
-        infoForNextState = 0;
         testRequestReceived = None;
         nextState = "RESPONDING_TO_TEST_CARD";
     if(stopRequestReceived):
         nextState = "STOPPING";
     return nextState, infoForNextState
         
-def respondToNewWord(message):
+def respondToNewWord(infoFromPrevState):
     print('------------------------------------------ RESPONDING_TO_NEW_WORD'); 
     global shapeFinished, wordManager #@todo make class attribute 
+    message = infoFromPrevState['wordReceived'];
     print("Cheers");
     wordToLearn = message.data;
     wordSeenBefore = wordManager.newCollection(wordToLearn);
@@ -568,17 +573,16 @@ def respondToNewWord(message):
     nextState = "ASKING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'centre': centre};
     '''
-    nextState = "PUBLISHING_LETTER";
-    infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
+    nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
+    infoForNextState = {'state_goTo': "PUBLISHING_LETTER",'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
 
     global wordReceived
     if(wordReceived is not None):
-        infoForNextState = wordReceived;
+        infoForNextState['wordReceived'] = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
     global testRequestReceived
     if(testRequestReceived):
-        infoForNextState = 0;
         testRequestReceived = None;
         nextState = "RESPONDING_TO_TEST_CARD";
     if(stopRequestReceived):
@@ -613,12 +617,11 @@ def askForFeedback(infoFromPrevState):
     infoForNextState = {'state_cameFrom': "ASKING_FOR_FEEDBACK"};
     global wordReceived;
     if(wordReceived is not None):
-        infoForNextState = wordReceived;
+        infoForNextState['wordReceived'] = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
     global testRequestReceived;
     if(wordReceived is not None):
-        infoForNextState = 0;
         testRequestReceived = None;
         nextState = "RESPONDING_TO_TEST_CARD";
     if(stopRequestReceived):
@@ -689,12 +692,11 @@ def waitForWord(infoFromPrevState):
     if(infoFromPrevState['state_cameFrom'] == "STARTING_INTERACTION"):
         pass
     
+    infoForNextState = {'state_cameFrom': "WAITING_FOR_WORD"};
     if(wordReceived is None):
         nextState = "WAITING_FOR_WORD";
-        infoForNextState = {'state_cameFrom': "WAITING_FOR_WORD"};
     else:
-        #print('Got message');
-        infoForNextState = wordReceived;
+        infoForNextState['wordReceived'] = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
     if(stopRequestReceived):
@@ -719,27 +721,34 @@ def waitForFeedback(infoFromPrevState):
     
     global feedbackReceived    
     if(feedbackReceived is not None):
-        infoForNextState = feedbackReceived;
+        infoForNextState['feedbackReceived'] = feedbackReceived;
         feedbackReceived = None;
         nextState = "RESPONDING_TO_FEEDBACK";
+        infoForNextState['state_goTo'] = nextState;
+        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     global demoShapeReceived    
     if(demoShapeReceived is not None):
-        infoForNextState = {'demoShapeReceived': demoShapeReceived}; #'state_cameFrom': "WAITING_FOR_FEEDBACK"
+        infoForNextState ['demoShapeReceived'] = demoShapeReceived; 
         demoShapeReceived = None;
         nextState = "RESPONDING_TO_DEMONSTRATION";    
+        infoForNextState['state_goTo'] = nextState; #ensure robot is connected before going to that state
+        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     global wordReceived
     if(wordReceived is not None):
-        infoForNextState = wordReceived;
+        infoForNextState['wordReceived'] = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
+        infoForNextState['state_goTo'] = nextState; #ensure robot is connected before going to that state
+        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     global testRequestReceived
     if(testRequestReceived):
-        infoForNextState = 0;
         testRequestReceived = None;
         nextState = "RESPONDING_TO_TEST_CARD";
+        infoForNextState['state_goTo'] = nextState; #ensure robot is connected before going to that state
+        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     if(stopRequestReceived):
         nextState = "STOPPING";
@@ -747,7 +756,25 @@ def waitForFeedback(infoFromPrevState):
 
 #def respondToTabletDisconnect(infoFromPrevState):
  #   infoForNextState = {'state_toReturnTo': "PUBLISHING_LETTER"}
-
+infoToRestore_waitForRobotToConnect = None;
+def waitForRobotToConnect(infoFromPrevState):
+    global infoToRestore_waitForRobotToConnect
+    #FORWARDER STATE
+    if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_ROBOT_TO_CONNECT"):
+        print('------------------------------------------ WAITING_FOR_ROBOT_TO_CONNECT');
+        infoToRestore_waitForRobotToConnect = infoFromPrevState;
+    
+    nextState = "WAITING_FOR_ROBOT_TO_CONNECT";
+    infoForNextState = {'state_cameFrom': "WAITING_FOR_ROBOT_TO_CONNECT"};
+    
+    if(robotWatchdog.isResponsive()):
+        infoForNextState = infoToRestore_waitForRobotToConnect;
+        nextState = infoForNextState['state_goTo'];
+    
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState
+    
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
 wordsLearnt = [];
@@ -797,7 +824,7 @@ if __name__ == "__main__":
     
     from watchdog import Watchdog #TODO: Make a ROS server so that *everyone* can access the connection statuses
     tabletWatchdog = Watchdog('watchdog_clear/tablet', 2);
-    #naoWatchdog = Watchdog('watchdo_clear/nao', 2);
+    robotWatchdog = Watchdog('watchdog_clear/robot', 2);
     
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
@@ -830,6 +857,7 @@ if __name__ == "__main__":
     
     stateMachine = StateMachine();
     stateMachine.add_state("STARTING_INTERACTION", startInteraction);
+    stateMachine.add_state("WAITING_FOR_ROBOT_TO_CONNECT", waitForRobotToConnect);
     stateMachine.add_state("WAITING_FOR_WORD", waitForWord);
     stateMachine.add_state("RESPONDING_TO_NEW_WORD", respondToNewWord);
     stateMachine.add_state("PUBLISHING_LETTER", publishShape);
@@ -843,10 +871,11 @@ if __name__ == "__main__":
     #stateMachine.add_state("WAITING_FOR_TABLET_TO_RECONNECT", waitForTabletToReconnect);
     stateMachine.add_state("STOPPING", stopInteraction);
     stateMachine.add_state("EXIT", None, end_state=True);
-    stateMachine.set_start("STARTING_INTERACTION");
-    infoForStartState = None;
+    stateMachine.set_start("WAITING_FOR_ROBOT_TO_CONNECT");
+    infoForStartState = {'state_goTo': "STARTING_INTERACTION", 'state_cameFrom': None};
     stateMachine.run(infoForStartState);
     
     rospy.spin();
 
     tabletWatchdog.stop();
+    robotWatchdog.stop();
