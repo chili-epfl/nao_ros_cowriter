@@ -122,11 +122,36 @@ def onUserDrawnShapeReceived(message):
         shape[0:numPointsInShape] = x_shape;
         shape[numPointsInShape:] = y_shape;
         
-        demoShapeReceived = shape; #TODO: ONLY REGISTER THIS AT THE APPROPRIATE TIME
+        location = ShapeModeler.getShapeCentre(numpy.array(shape));
+        try:
+            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
+            request = shapeAtLocationRequest();
+            request.location.x = location[0];
+            request.location.y = location[1];
+            response = shape_at_location(request);
+            shapeIndex_demoFor = response.shape_type_code;
+            #TODO: map to closest shape on screen
+            '''
+            closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
+            request = closestShapeToLocationRequest();
+            request.location.x = location[0];
+            request.location.y = location[1];
+            response = closest_shape_to_location(request);
+            shapeIndex_demoFor = response.shape_type_code;
+            '''
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+    
+        if(shapeIndex_demoFor == -1 or response.shape_id == -1): 
+            print("Ignoring demo because not for valid shape");
+        else:
+            demoShapeReceived = {'path': shape, 'shapeType_code': shapeIndex_demoFor}; #TODO: ONLY REGISTER THIS AT THE APPROPRIATE TIME
     
 def respondToDemonstration(infoFromPrevState):
     print('------------------------------------------ RESPONDING_TO_DEMONSTRATION');
-    shape = infoFromPrevState['demoShapeReceived'];
+    demoShapeReceived = infoFromPrevState['demoShapeReceived'];
+    shape = demoShapeReceived['path'];
+    shapeIndex_demoFor = demoShapeReceived['shapeType_code'];
     numPointsInShape = len(shape)/2;
     x_shape = shape[0:numPointsInShape];
     y_shape = shape[numPointsInShape:];
@@ -142,51 +167,18 @@ def respondToDemonstration(infoFromPrevState):
     shape = [];
     shape[0:numPoints_shapeModeler] = x_shape;
     shape[numPoints_shapeModeler:] = y_shape;
-    
-    location = ShapeModeler.getShapeCentre(numpy.array(shape));
-    try:
-        shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
-        request = shapeAtLocationRequest();
-        request.location.x = location[0];
-        request.location.y = location[1];
-        response = shape_at_location(request);
-        shapeIndex_demoFor = response.shape_type_code;
-        #TODO: map to closest shape on screen
-        '''
-        closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
-        request = closestShapeToLocationRequest();
-        request.location.x = location[0];
-        request.location.y = location[1];
-        response = closest_shape_to_location(request);
-        shapeIndex_demoFor = response.shape_type_code;
-        '''
+
+    shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
+    shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
+    if(args.show):
+        plt.figure(1);
+        ShapeModeler.normaliseAndShowShape(shape);
         
-        '''
-        index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
-        request = indexOfLocationRequest();
-        request.location.x = location[0];
-        request.location.y = location[1];
-        response = index_of_location(request);
-        shapeIndex_demoFor = response.row;
-        '''
-    except rospy.ServiceException, e:
-        print "Service call failed: %s"%e
-    
-    if(shapeIndex_demoFor == -1 or response.shape_id == -1): #TODO get subscriber to do this error checking to prevent state machine moving around unnecessarily
-        print("Ignoring demo because not for valid shape");
-        nextState = "WAITING_FOR_FEEDBACK";
-        infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION"};
-    else:
-        shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
-        shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
-        if(args.show):
-            plt.figure(1);
-            ShapeModeler.normaliseAndShowShape(shape);
-        shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
-        print("Received demo for " + shapeType);
-        shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
-        nextState = "PUBLISHING_LETTER";
-        infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shape': shape};
+    shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
+    print("Received demo for " + shapeType);
+    shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
+    nextState = "PUBLISHING_LETTER";
+    infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shape': shape};
     return nextState, infoForNextState
     
 def make_traj_msg(shape, shapeCentre, headerString):      
