@@ -171,25 +171,23 @@ def respondToDemonstration(infoFromPrevState):
         '''
     except rospy.ServiceException, e:
         print "Service call failed: %s"%e
-
-    shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
-    shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
-    if(args.show):
-        plt.figure(1);
-        ShapeModeler.normaliseAndShowShape(shape);
-    shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
-    print("Received demo for " + shapeType);
-    shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
-    nextState = "PUBLISHING_LETTER";
-    infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shape': shape};
+    
+    if(shapeIndex_demoFor == -1 or response.shape_id == -1): #TODO get subscriber to do this error checking to prevent state machine moving around unnecessarily
+        print("Ignoring demo because not for valid shape");
+        nextState = "WAITING_FOR_FEEDBACK";
+        infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION"};
+    else:
+        shape = ShapeModeler.normaliseShapeHeight(numpy.array(shape));
+        shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
+        if(args.show):
+            plt.figure(1);
+            ShapeModeler.normaliseAndShowShape(shape);
+        shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
+        print("Received demo for " + shapeType);
+        shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
+        nextState = "PUBLISHING_LETTER";
+        infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shape': shape};
     return nextState, infoForNextState
-    '''
-    centre = publishShape(shape);
-        
-    nextState = "ASKING_FOR_FEEDBACK";
-    infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'centre': centre};
-    return nextState, infoForNextState
-    '''
     
 def make_traj_msg(shape, shapeCentre, headerString):      
     
