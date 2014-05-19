@@ -378,26 +378,57 @@ def publishShape(infoFromPrevState):
     
     return nextState, infoForNextState
     
+infoToRestore_waitForShapeToFinish = None;
+global shape_finished_subscriber;
 def waitForShapeToFinish(infoFromPrevState):
-    print('------------------------------------------ WAITING_FOR_LETTER_TO_FINISH');
-    shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
+    global infoToRestore_waitForShapeToFinish, shape_finished_subscriber
+    #FORWARDER STATE
     
+    #first time into this state preparations
+    if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_LETTER_TO_FINISH"):
+        print('------------------------------------------ WAITING_FOR_LETTER_TO_FINISH');
+        infoToRestore_waitForShapeToFinish = infoFromPrevState;
+        shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
+    
+    #default
+    nextState = 'WAITING_FOR_LETTER_TO_FINISH';
+    infoForNextState = {'state_cameFrom': 'WAITING_FOR_LETTER_TO_FINISH'};
+    
+    #once shape has finished
     global shapeFinished
-    while(not shapeFinished and tabletWatchdog.isResponsive()):
-        rospy.sleep(0.1);
-    shape_finished_subscriber.unregister();
-    shapeFinished = False;
-
-    nextState = 'WAITING_FOR_ROBOT_TO_CONNECT'; #wait for the robot to connect before...
-    state_goTo = "ASKING_FOR_FEEDBACK";         #going to next state 
-      
-    if(infoFromPrevState['state_toReturnTo'] is not None):
-        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';         #wait for the robot to connect before...
-        state_goTo = infoFromPrevState['state_toReturnTo']; #going to next state 
-    infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': infoFromPrevState['state_cameFrom'], 'centre': infoFromPrevState['centre']};
+    if(shapeFinished):
+        shape_finished_subscriber.unregister();
+        shapeFinished = False;
+        
+        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT'; #wait for the robot to connect before...
+        state_goTo = "ASKING_FOR_FEEDBACK";         #going to next state 
+        
+        infoFromPrevState = infoToRestore_waitForShapeToFinish;
+        if(infoFromPrevState['state_toReturnTo'] is not None):
+            nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';         #wait for the robot to connect before...
+            state_goTo = infoFromPrevState['state_toReturnTo']; #going to next state 
+        infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': infoFromPrevState['state_cameFrom'], 'centre': infoFromPrevState['centre']};
+        
+        if(state_goTo == 'PUBLISHING_LETTER' and infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
+            infoForNextState['shapesToPublish'] = infoFromPrevState['shapesToPublish']; #include the shapes which are remaining in the message
     
-    if(state_goTo == 'PUBLISHING_LETTER' and infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
-        infoForNextState['shapesToPublish'] = infoFromPrevState['shapesToPublish']; #include the shapes which are remaining in the message
+    #act if the tablet disconnects
+    if(not tabletWatchdog.isResponsive()):
+        nextState = 'WAITING_FOR_TABLET_TO_CONNECT';
+        infoForNextState = {'state_goTo': 'WAITING_FOR_FEEDBACK', 'state_cameFrom': 'WAITING_FOR_LETTER_TO_FINISH'};
+        #TODO go back and re-send whatever we just send that we never got the shapeFinished message for...
+     
+    global wordReceived
+    if(wordReceived is not None):
+        infoForNextState['wordReceived'] = wordReceived;
+        wordReceived = None;
+        nextState = "RESPONDING_TO_NEW_WORD";
+    global testRequestReceived
+    if(testRequestReceived):
+        testRequestReceived = None;
+        nextState = "RESPONDING_TO_TEST_CARD";
+    if(stopRequestReceived):
+        nextState = "STOPPING";   
     
     return nextState, infoForNextState
           
@@ -462,46 +493,7 @@ def respondToFeedback(infoFromPrevState):
                 infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK",'shape': newShape};
             else:
                 pass #TODO handle convergence
-            '''           
-            centre = publishShapeAndWaitForFeedback(newShape);
-            if(simulatedFeedback and numItersConverged == 0):
-                bestShape_index = wordManager.generateSimulatedFeedback(shapeIndex_messageFor, newShape, paramValue);
-                publishSimulatedFeedback(bestShape_index, shapeIndex_messageFor,True);
 
-            elif(not tabletConnected):
-                rospy.sleep(10);
-                print('Shape finished');
-                
-            else: #wait for finished signal from tablet
-                rospy.sleep(0.1);
-                #listen for notification that the letter is finished
-                shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
-                while(not shapeFinished and tabletWatchdog.isResponsive()):
-                    rospy.sleep(0.1);
-                shape_finished_subscriber.unregister();
-                shapeFinished = False;
-                if(not tabletWatchdog.isResponsive()): #stopped waiting because lost connection
-                    print('Error connecting to tablet');
-                else:
-                    print('Shape finished.');
-                
-            if(numItersConverged>0):
-                print("I can\'t make anymore different shapes (converged for " + str(numItersConverged) + "iterations)");
-                
-            if(numItersConverged >= numItersBeforeConsideredStuck):
-                print("I think I'm stuck...");
-                if(naoSpeaking):
-                    textToSpeech.say("I\'m not sure I understand. Let\'s try again.");
-                #TODO - not decided yet what to do in this case
-                
-                #change bounds back to the initial ones to hopefully get un-stuck
-                wordManager.resetParameterBounds(shapeIndex_messageFor);
-                nextState = "WAITING_FOR_FEEDBACK";
-                infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK"};
-            else:    
-                nextState = "ASKING_FOR_FEEDBACK";
-                infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK",'centre': centre};
-                '''
     global wordReceived
     if(wordReceived is not None):
         infoForNextState['wordReceived'] = wordReceived;
@@ -540,29 +532,7 @@ def respondToNewWord(infoFromPrevState):
     for i in range(len(wordToLearn)):
         shape = wordManager.startNextShapeLearner();
         shapesToPublish.append(shape);
-        '''print('Sending '+shape.shapeType);
-        centre = publishShapeAndWaitForFeedback(shape);
-        if(simulatedFeedback): #pretend first one isn't good enough
-            publishSimulatedFeedback(0,shapeType_code,True); 
 
-        elif(not tabletConnected):
-            rospy.sleep(10);
-            print('Shape finished');
-        else:
-            rospy.sleep(0.1);
-            #listen for notification that the letter is finished
-            shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
-            while(not shapeFinished and tabletWatchdog.isResponsive()):
-                rospy.sleep(0.1);
-            shape_finished_subscriber.unregister();
-            shapeFinished = False;
-            if(not tabletWatchdog.isResponsive()): #stopped waiting because lost connection
-                print('Error connecting to tablet');
-            else:
-                print('Shape finished.');
-    nextState = "ASKING_FOR_FEEDBACK";
-    infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'centre': centre};
-    '''
     nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
     infoForNextState = {'state_goTo': "PUBLISHING_LETTER",'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
 
@@ -695,8 +665,11 @@ def waitForWord(infoFromPrevState):
     
 def onFeedbackReceived(message):
     global feedbackReceived 
-    if(stateMachine.get_state() == "ASKING_FOR_FEEDBACK" or stateMachine.get_state() == "WAITING_FOR_FEEDBACK" ):
+    if(stateMachine.get_state() == "ASKING_FOR_FEEDBACK" 
+        or stateMachine.get_state() == "WAITING_FOR_FEEDBACK" 
+        or stateMachine.get_state() == "WAITING_FOR_LETTER_TO_FINISH" ):
         feedbackReceived = message; #replace any existing feedback with new
+        print('Received feedback');
     elif(stateMachine.get_state() == "RESPONDING_TO_FEEDBACK"):
         feedbackReceived = None; #ignore feedback
 
@@ -765,6 +738,25 @@ def waitForRobotToConnect(infoFromPrevState):
         nextState = "STOPPING";
     return nextState, infoForNextState
     
+infoToRestore_waitForTabletToConnect = None;
+def waitForTabletToConnect(infoFromPrevState):
+    global infoToRestore_waitForTabletToConnect
+    #FORWARDER STATE
+    if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_TABLET_TO_CONNECT"):
+        print('------------------------------------------ WAITING_FOR_TABLET_TO_CONNECT');
+        infoToRestore_waitForTabletToConnect = infoFromPrevState;
+    
+    nextState = "WAITING_FOR_TABLET_TO_CONNECT";
+    infoForNextState = {'state_cameFrom': "WAITING_FOR_TABLET_TO_CONNECT"};
+    
+    if(tabletWatchdog.isResponsive()): #reconnection - send message to wherever it was going
+        infoForNextState = infoToRestore_waitForTabletToConnect;
+        nextState = infoForNextState['state_goTo'];
+    
+    if(stopRequestReceived):
+        nextState = "STOPPING";
+    return nextState, infoForNextState    
+
 ### --------------------------------------------------------------- MAIN
 shapesLearnt = [];
 wordsLearnt = [];
@@ -858,7 +850,7 @@ if __name__ == "__main__":
     stateMachine.add_state("RESPONDING_TO_DEMONSTRATION", respondToDemonstration);
     stateMachine.add_state("RESPONDING_TO_TEST_CARD", respondToTestCard);
     #stateMachine.add_state("RESPONDING_TO_TABLET_DISCONNECT", respondToTabletDisconnect);
-    #stateMachine.add_state("WAITING_FOR_TABLET_TO_RECONNECT", waitForTabletToReconnect);
+    stateMachine.add_state("WAITING_FOR_TABLET_TO_CONNECT", waitForTabletToConnect);
     stateMachine.add_state("STOPPING", stopInteraction);
     stateMachine.add_state("EXIT", None, end_state=True);
     stateMachine.set_start("WAITING_FOR_ROBOT_TO_CONNECT");
