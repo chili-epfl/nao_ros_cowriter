@@ -26,6 +26,9 @@ from geometry_msgs.msg import PoseStamped, Point, PointStamped
 from std_msgs.msg import String, Empty
 
 from state_machine import StateMachine
+from copy import deepcopy
+drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO_CONNECT', 'PUBLISHING_LETTER'];
+
 
 #Nao parameters
 NAO_IP = '192.168.1.2';
@@ -177,8 +180,9 @@ def respondToDemonstration(infoFromPrevState):
     shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
     print("Received demo for " + shapeType);
     shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
-    nextState = "PUBLISHING_LETTER";
-    infoForNextState = {'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shape': shape};
+    state_goTo = deepcopy(drawingLetterSubstates);
+    nextState = state_goTo.pop(0);
+    infoForNextState = {'state_goTo': state_goTo, 'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shapesToPublish': [shape]};
     return nextState, infoForNextState
     
 def make_traj_msg(shape, shapeCentre, headerString):      
@@ -324,7 +328,7 @@ def relax():
     
 def onShapeFinished(message):
     global shapeFinished;
-    shapeFinished = True;
+    shapeFinished = True; #TODO only register when appropriate
                
 ### ----------------------------------------- PUBLISH SIMULATED FEEDBACK    
 def publishSimulatedFeedback(bestShape_index, shapeType_index, doGroupwiseComparison):           
@@ -339,11 +343,8 @@ def publishSimulatedFeedback(bestShape_index, shapeType_index, doGroupwiseCompar
 ### ------------------------------------------------------ PUBLISH SHAPE        
 def publishShape(infoFromPrevState):
     print('------------------------------------------ PUBLISHING_LETTER'); 
-    if(infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
-        shapesToPublish = infoFromPrevState['shapesToPublish'];
-        shape = shapesToPublish.pop(0); #publish next remaining shape (and remove from list)
-    else:
-        shape = infoFromPrevState['shape'];
+    shapesToPublish = infoFromPrevState['shapesToPublish'];
+    shape = shapesToPublish.pop(0); #publish next remaining shape (and remove from list)
         
     trajStartPosition = Point();
     if(simulatedFeedback):
@@ -368,27 +369,23 @@ def publishShape(infoFromPrevState):
         pub_traj.publish(traj);   
     
     nextState = "WAITING_FOR_LETTER_TO_FINISH";
-    state_toReturnTo = None;
-    infoForNextState = {'state_cameFrom': infoFromPrevState['state_cameFrom'], 'state_toReturnTo': state_toReturnTo, 'centre': trajStartPosition};
-    if(infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
-        if(len(shapesToPublish) > 0):
-            state_toReturnTo = 'PUBLISHING_LETTER'; #come back to publish the remaining shapes
-            infoForNextState = {'state_cameFrom': infoFromPrevState['state_cameFrom'], 
-            'state_toReturnTo': state_toReturnTo, 'shapesToPublish': shapesToPublish, 'centre': trajStartPosition};
+    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER"};
+    if(len(shapesToPublish) > 0): #more shapes to publish
+        state_goTo = deepcopy(drawingLetterSubstates);#come back to publish the remaining shapes
+        infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "PUBLISHING_LETTER",'shapesToPublish': shapesToPublish,'centre': trajStartPosition};
     
     return nextState, infoForNextState
     
-infoToRestore_waitForShapeToFinish = None;
+infoToRestore_waitForShapeToFinish = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished); 
 global shape_finished_subscriber;
 def waitForShapeToFinish(infoFromPrevState):
-    global infoToRestore_waitForShapeToFinish, shape_finished_subscriber
+    global infoToRestore_waitForShapeToFinish
     #FORWARDER STATE
     
     #first time into this state preparations
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_LETTER_TO_FINISH"):
         print('------------------------------------------ WAITING_FOR_LETTER_TO_FINISH');
         infoToRestore_waitForShapeToFinish = infoFromPrevState;
-        shape_finished_subscriber = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished);
     
     #default
     nextState = 'WAITING_FOR_LETTER_TO_FINISH';
@@ -397,25 +394,21 @@ def waitForShapeToFinish(infoFromPrevState):
     #once shape has finished
     global shapeFinished
     if(shapeFinished):
-        shape_finished_subscriber.unregister();
         shapeFinished = False;
         
-        nextState = 'WAITING_FOR_ROBOT_TO_CONNECT'; #wait for the robot to connect before...
-        state_goTo = "ASKING_FOR_FEEDBACK";         #going to next state 
-        
-        infoFromPrevState = infoToRestore_waitForShapeToFinish;
-        if(infoFromPrevState['state_toReturnTo'] is not None):
-            nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';         #wait for the robot to connect before...
-            state_goTo = infoFromPrevState['state_toReturnTo']; #going to next state 
-        infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': infoFromPrevState['state_cameFrom'], 'centre': infoFromPrevState['centre']};
-        
-        if(state_goTo == 'PUBLISHING_LETTER' and infoFromPrevState['state_cameFrom'] == 'RESPONDING_TO_NEW_WORD'):
-            infoForNextState['shapesToPublish'] = infoFromPrevState['shapesToPublish']; #include the shapes which are remaining in the message
-    
+        infoForNextState = infoToRestore_waitForShapeToFinish;
+        try:
+            if(infoForNextState['state_goTo'] is not None and len(infoForNextState['state_goTo'])>0):
+                nextState = infoForNextState['state_goTo'].pop(0); #go to the next state requested to and remove it from the list
+                #TODO make sure it actually gets executed before popping it...
+        except:
+            #nothing planned..
+            nextState = 'WAITING_FOR_FEEDBACK';
+            
     #act if the tablet disconnects
     if(not tabletWatchdog.isResponsive()):
         nextState = 'WAITING_FOR_TABLET_TO_CONNECT';
-        infoForNextState = {'state_goTo': 'WAITING_FOR_FEEDBACK', 'state_cameFrom': 'WAITING_FOR_LETTER_TO_FINISH'};
+        infoForNextState = {'state_goTo': ['WAITING_FOR_FEEDBACK'], 'state_cameFrom': 'WAITING_FOR_LETTER_TO_FINISH'};
         #TODO go back and re-send whatever we just send that we never got the shapeFinished message for...
      
     global wordReceived
@@ -489,8 +482,9 @@ def respondToFeedback(infoFromPrevState):
             [numItersConverged, newShape] = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
             
             if(numItersConverged == 0):
-                nextState = "PUBLISHING_LETTER";
-                infoForNextState = {'state_cameFrom': "RESPONDING_TO_FEEDBACK",'shape': newShape};
+                state_goTo = deepcopy(drawingLetterSubstates);
+                nextState = state_goTo.pop(0);
+                infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "RESPONDING_TO_FEEDBACK",'shapesToPublish': [newShape]};
             else:
                 pass #TODO handle convergence
 
@@ -533,8 +527,9 @@ def respondToNewWord(infoFromPrevState):
         shape = wordManager.startNextShapeLearner();
         shapesToPublish.append(shape);
 
-    nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
-    infoForNextState = {'state_goTo': "PUBLISHING_LETTER",'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
+    state_goTo = deepcopy(drawingLetterSubstates);
+    nextState = state_goTo.pop(0);
+    infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
 
     global wordReceived
     if(wordReceived is not None):
@@ -687,7 +682,7 @@ def waitForFeedback(infoFromPrevState):
         infoForNextState['feedbackReceived'] = feedbackReceived;
         feedbackReceived = None;
         nextState = "RESPONDING_TO_FEEDBACK";
-        infoForNextState['state_goTo'] = nextState;
+        infoForNextState['state_goTo'] = [nextState];
         nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     global demoShapeReceived    
@@ -695,7 +690,7 @@ def waitForFeedback(infoFromPrevState):
         infoForNextState ['demoShapeReceived'] = demoShapeReceived; 
         demoShapeReceived = None;
         nextState = "RESPONDING_TO_DEMONSTRATION";    
-        infoForNextState['state_goTo'] = nextState; #ensure robot is connected before going to that state
+        infoForNextState['state_goTo'] = [nextState]; #ensure robot is connected before going to that state
         nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     global wordReceived
@@ -703,14 +698,14 @@ def waitForFeedback(infoFromPrevState):
         infoForNextState['wordReceived'] = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
-        infoForNextState['state_goTo'] = nextState; #ensure robot is connected before going to that state
+        infoForNextState['state_goTo'] = [nextState]; #ensure robot is connected before going to that state
         nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     global testRequestReceived
     if(testRequestReceived):
         testRequestReceived = None;
         nextState = "RESPONDING_TO_TEST_CARD";
-        infoForNextState['state_goTo'] = nextState; #ensure robot is connected before going to that state
+        infoForNextState['state_goTo'] = [nextState]; #ensure robot is connected before going to that state
         nextState = 'WAITING_FOR_ROBOT_TO_CONNECT';
         
     if(stopRequestReceived):
@@ -724,7 +719,7 @@ def waitForRobotToConnect(infoFromPrevState):
     global infoToRestore_waitForRobotToConnect
     #FORWARDER STATE
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_ROBOT_TO_CONNECT"):
-        print('------------------------------------------ WAITING_FOR_ROBOT_TO_CONNECT');
+        print('------------------------------------------ waiting_for_robot_to_connect');
         infoToRestore_waitForRobotToConnect = infoFromPrevState;
     
     nextState = "WAITING_FOR_ROBOT_TO_CONNECT";
@@ -732,7 +727,10 @@ def waitForRobotToConnect(infoFromPrevState):
     
     if(robotWatchdog.isResponsive()):
         infoForNextState = infoToRestore_waitForRobotToConnect;
-        nextState = infoForNextState['state_goTo'];
+        try:
+            nextState = infoForNextState['state_goTo'].pop(0);
+        except:
+            import pdb; pdb.set_trace();
     
     if(stopRequestReceived):
         nextState = "STOPPING";
@@ -743,7 +741,7 @@ def waitForTabletToConnect(infoFromPrevState):
     global infoToRestore_waitForTabletToConnect
     #FORWARDER STATE
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_TABLET_TO_CONNECT"):
-        print('------------------------------------------ WAITING_FOR_TABLET_TO_CONNECT');
+        print('------------------------------------------ waiting_for_tablet_to_connect');
         infoToRestore_waitForTabletToConnect = infoFromPrevState;
     
     nextState = "WAITING_FOR_TABLET_TO_CONNECT";
@@ -751,7 +749,7 @@ def waitForTabletToConnect(infoFromPrevState):
     
     if(tabletWatchdog.isResponsive()): #reconnection - send message to wherever it was going
         infoForNextState = infoToRestore_waitForTabletToConnect;
-        nextState = infoForNextState['state_goTo'];
+        nextState = infoForNextState['state_goTo'].pop(0);
     
     if(stopRequestReceived):
         nextState = "STOPPING";
@@ -854,7 +852,7 @@ if __name__ == "__main__":
     stateMachine.add_state("STOPPING", stopInteraction);
     stateMachine.add_state("EXIT", None, end_state=True);
     stateMachine.set_start("WAITING_FOR_ROBOT_TO_CONNECT");
-    infoForStartState = {'state_goTo': "STARTING_INTERACTION", 'state_cameFrom': None};
+    infoForStartState = {'state_goTo': ["STARTING_INTERACTION"], 'state_cameFrom': None};
     stateMachine.run(infoForStartState);
     
     rospy.spin();
