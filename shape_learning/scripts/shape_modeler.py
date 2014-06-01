@@ -8,6 +8,7 @@ import numpy
 import matplotlib.pyplot as plt
 from matplotlib.mlab import PCA
 import random
+from copy import deepcopy
 
 class ShapeModeler:
     
@@ -72,7 +73,7 @@ class ShapeModeler:
         
     #Draw 'paramsToVary' values from uniform distribution with limits given by 'bounds' and make shape
     def makeRandomShapeFromUniform(self, params, paramsToVary, bounds):
-        xb = params;
+        xb = deepcopy(params);
         for i in range(len(paramsToVary)):
             sample = random.uniform(bounds[i,0],bounds[i,1]);
             xb[paramsToVary[i]-1,0] = sample;
@@ -81,7 +82,7 @@ class ShapeModeler:
         
     #Draw 'paramsToVary' values from triangular distribution with limits given by 'bounds' and modes given by 'modes' and make shape       
     def makeRandomShapeFromTriangular(self, params, paramsToVary, bounds, modes):
-        b = params;
+        b = deepcopy(params);
         for i in range(len(paramsToVary)):
             sample = random.triangular(bounds[i,0],modes[i],bounds[i,1]);
             b[paramsToVary[i]-1,0] = sample;
@@ -92,7 +93,11 @@ class ShapeModeler:
         if(not shape.shape == (self.numPointsInShapes*2,1)):
             raise RuntimeError("Shape to decompose must be the same size as shapes used to make the dataset");
         params = numpy.dot(self.principleComponents.T, shape - self.meanShape);
-        return params
+
+        approxShape = self.meanShape + numpy.dot(self.principleComponents, params);
+        diff = abs(shape-approxShape)**2;
+        error = sum(diff)/(self.numPointsInShapes*2);
+        return params, error
         
     #Show shape with random colour
     @staticmethod
@@ -126,9 +131,10 @@ class ShapeModeler:
         x_shape = x_shape/scale;
         y_shape = y_shape/scale;        
         
-        shape[0:numPointsInShape] = x_shape;
-        shape[numPointsInShape:] = y_shape;
-        return shape
+        newShape = numpy.zeros(shape.shape);
+        newShape[0:numPointsInShape] = x_shape;
+        newShape[numPointsInShape:] = y_shape;
+        return newShape
         
     #Calculate the centre of the shape
     @staticmethod
@@ -165,10 +171,11 @@ class ShapeModeler:
         
         x_shape = x_shape/scale;
         y_shape = y_shape/scale;
-
-        shape[0:numPointsInShape] = x_shape;
-        shape[numPointsInShape:] = y_shape;
-        return shape
+        
+        newShape = numpy.zeros(shape.shape);
+        newShape[0:numPointsInShape] = x_shape;
+        newShape[numPointsInShape:] = y_shape;
+        return newShape
         
     #Normalise shape so that max dimension is 1 and then show   
     @staticmethod
