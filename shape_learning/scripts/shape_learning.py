@@ -62,21 +62,22 @@ learningModes = {'c': LearningModes.startsRandom,
 FRAME = 'writing_surface';  #Frame ID to publish points in
 FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
 SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
+SHAPE_TOPIC_DOWNSAMPLED = 'write_traj_downsampled'; #Name of topic to publish shapes to
 if(naoWriting):
     t0 = 3;                 #Time allowed for the first point in traj (seconds)
-    dt = 0.35               #Seconds between points in traj
+    dt = 0.25               #Seconds between points in traj
     delayBeforeExecuting = 3;#How far in future to request the traj be executed (to account for transmission delays and preparedness)
 elif(naoConnected):
     t0 = 0.05;
     dt = 0.1;
     delayBeforeExecuting = 3.5;
 else:
-    t0 = 0.05;
+    t0 = 0.5;
     dt = 0.1;
     delayBeforeExecuting = 3.5;
 sizeScale_height = 0.035;    #Desired height of shape (metres)
 sizeScale_width = 0.023;     #Desired width of shape (metres)
-numDesiredShapePoints = 15.0;#Number of points to downsample the length of shapes to 
+numDesiredShapePoints = 7.0;#Number of points to downsample the length of shapes to 
 numPoints_shapeModeler = 70; #Number of points used by ShapeModelers
 
 #tablet parameters
@@ -92,6 +93,7 @@ TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the ro
 STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
+pub_traj_downsampled = rospy.Publisher(SHAPE_TOPIC_DOWNSAMPLED, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
 
 phrases_askingForFeedback = {"Any better?","How about now?"};
@@ -185,26 +187,34 @@ def respondToDemonstration(infoFromPrevState):
     infoForNextState = {'state_goTo': state_goTo, 'state_cameFrom': "RESPONDING_TO_DEMONSTRATION",'shapesToPublish': [shape]};
     return nextState, infoForNextState
     
-def make_traj_msg(shape, shapeCentre, headerString):      
+def make_traj_msg(shape, shapeCentre, headerString, startTime, downsample, deltaT):      
+    if(startTime!=t0):
+        penUpToFirst = True;
+    else:
+        penUpToFirst = False;
     
     traj = Path();
     traj.header.frame_id = FRAME#headerString;
     traj.header.stamp = rospy.Time.now()+rospy.Duration(delayBeforeExecuting);
     shape = ShapeModeler.normaliseShapeHeight(shape);
-    numPointsInShape = len(shape)/2;   
+    numPointsInShape_orig = len(shape)/2;   
     
-    x_shape = shape[0:numPointsInShape];
-    y_shape = shape[numPointsInShape:];
+    x_shape = shape[0:numPointsInShape_orig];
+    y_shape = shape[numPointsInShape_orig:];
+    
+    if(downsample):
+        #make shape have the appropriate number of points
+        t_current = numpy.linspace(0, 1, numPointsInShape_orig);
+        t_desired = numpy.linspace(0, 1, numDesiredShapePoints);
+        f = interpolate.interp1d(t_current, x_shape[:,0], kind='cubic');
+        x_shape = f(t_desired);
+        f = interpolate.interp1d(t_current, y_shape[:,0], kind='cubic');
+        y_shape = f(t_desired);
 
-    #make shape have the same number of points as the shape_modeler
-    t_current = numpy.linspace(0, 1, numPointsInShape);
-    t_desired = numpy.linspace(0, 1, numDesiredShapePoints);
-    f = interpolate.interp1d(t_current, x_shape[:,0], kind='cubic');
-    x_shape = f(t_desired);
-    f = interpolate.interp1d(t_current, y_shape[:,0], kind='cubic');
-    y_shape = f(t_desired);
-
-    numPointsInShape = len(x_shape);
+        numPointsInShape = len(x_shape);
+        downsampleFactor = numPointsInShape_orig/float(numPointsInShape);
+    else:
+        numPointsInShape = numPointsInShape_orig;
     
     for i in range(numPointsInShape):
         point = PoseStamped();
@@ -215,10 +225,15 @@ def make_traj_msg(shape, shapeCentre, headerString):
         point.pose.position.y+= + shapeCentre[1];
         
         point.header.frame_id = FRAME;
-        point.header.stamp = rospy.Time(t0+i*dt); #@todo allow for variable time between points for now
+        point.header.stamp = rospy.Time(startTime+i*deltaT); #@todo allow for variable time between points for now
+        if(penUpToFirst and i==0):
+            point.header.seq = 1;
         traj.poses.append(point);
-
-    return traj
+    
+    if(downsample):
+        return traj, downsampleFactor
+    else:
+        return traj
     
 ###
             
@@ -345,8 +360,7 @@ def publishShape(infoFromPrevState):
     print('------------------------------------------ PUBLISHING_LETTER'); 
     shapesToPublish = infoFromPrevState['shapesToPublish'];
     shape = shapesToPublish.pop(0); #publish next remaining shape (and remove from list)
-        
-    trajStartPosition = Point();
+
     if(simulatedFeedback):
         if(args.show):
             plt.figure(1);
@@ -362,12 +376,63 @@ def publishShape(infoFromPrevState):
             print "Service call failed: %s"%e
         
         headerString = shape.shapeType+'_'+str(shape.paramsToVary)+'_'+str(shape.paramValues);
-        traj = make_traj_msg(shape.path, shapeCentre, headerString);
+        [traj_downsampled, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, t0, True, dt); #for robot
+        traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, dt/downsampleFactor);
+        trajStartPosition = traj.poses[0].pose.position;
         if(naoConnected):
-            trajStartPosition = traj.poses[0].pose.position;
             nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
-        pub_traj.publish(traj);   
+        pub_traj_downsampled.publish(traj_downsampled);
+        pub_traj.publish(traj);
+           
     
+    nextState = "WAITING_FOR_LETTER_TO_FINISH";
+    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER"};
+    if(len(shapesToPublish) > 0): #more shapes to publish
+        state_goTo = deepcopy(drawingLetterSubstates);#come back to publish the remaining shapes
+        infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "PUBLISHING_LETTER",'shapesToPublish': shapesToPublish,'centre': trajStartPosition};
+    
+    return nextState, infoForNextState
+    
+### ------------------------------------------------------ PUBLISH WORD        
+def publishWord(infoFromPrevState):
+    print('------------------------------------------ PUBLISHING_WORD'); 
+    shapesToPublish = infoFromPrevState['shapesToPublish'];
+    
+    wholeTraj = Path();
+    wholeTraj_downsampled = Path();
+    
+    startTime = t0;
+    for shape in shapesToPublish:
+        
+        try:
+            display_new_shape = rospy.ServiceProxy('display_new_shape', displayNewShape);
+            response = display_new_shape(shape_type_code = shape.shapeType_code);
+            shapeCentre = numpy.array([response.location.x, response.location.y]);
+        except rospy.ServiceException, e:
+            print "Service call failed: %s"%e
+        
+        headerString = shape.shapeType+'_'+str(shape.paramsToVary)+'_'+str(shape.paramValues);
+        [traj_downsampled, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt); #for robot
+        #print(downsampleFactor)
+        [traj, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt);
+        
+        wholeTraj.poses.extend(deepcopy(traj.poses));
+        wholeTraj_downsampled.poses.extend(deepcopy(traj_downsampled.poses));
+        startTime = traj.poses[-1].header.stamp.to_sec() + t0; #start after the previous shape finishes next time
+        #print(startTime)
+        #print(traj_downsampled.poses[-1].header.stamp.to_sec() + t0) #timings are off by dt when do downsampling.....
+    
+    wholeTraj.header = traj.header;
+    wholeTraj_downsampled.header = traj.header;
+    trajStartPosition = wholeTraj.poses[0].pose.position;
+    if(naoConnected):
+        nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape  
+    #import pdb; pdb.set_trace()
+    #print(wholeTraj)
+    pub_traj_downsampled.publish(wholeTraj_downsampled);
+    pub_traj.publish(wholeTraj);  
+    
+    shapesToPublish = [];
     nextState = "WAITING_FOR_LETTER_TO_FINISH";
     infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER"};
     if(len(shapesToPublish) > 0): #more shapes to publish
