@@ -615,9 +615,11 @@ def respondToNewWord(infoFromPrevState):
         shape = wordManager.startNextShapeLearner();
         shapesToPublish.append(shape);
 
-    state_goTo = deepcopy(drawingLetterSubstates);
-    nextState = state_goTo.pop(0);
-    infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
+    #state_goTo = deepcopy(drawingLetterSubstates);
+    #nextState = state_goTo.pop(0);
+    #infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
+    nextState = 'PUBLISHING_WORD';
+    infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
 
     global wordReceived
     if(wordReceived is not None):
@@ -928,6 +930,7 @@ if __name__ == "__main__":
     stateMachine.add_state("WAITING_FOR_ROBOT_TO_CONNECT", waitForRobotToConnect);
     stateMachine.add_state("WAITING_FOR_WORD", waitForWord);
     stateMachine.add_state("RESPONDING_TO_NEW_WORD", respondToNewWord);
+    stateMachine.add_state("PUBLISHING_WORD", publishWord);
     stateMachine.add_state("PUBLISHING_LETTER", publishShape);
     stateMachine.add_state("WAITING_FOR_LETTER_TO_FINISH", waitForShapeToFinish);
     stateMachine.add_state("ASKING_FOR_FEEDBACK", askForFeedback);
