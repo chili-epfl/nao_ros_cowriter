@@ -14,7 +14,7 @@ import tf
 from copy import deepcopy
 from naoqi import ALProxy
 
-TRAJ_TOPIC = "/write_traj"
+TRAJ_TOPIC = "/write_traj_downsampled"
 
 # masks for which axes naoqi is to control with its planning
 AXIS_MASK_X = 1
@@ -25,7 +25,7 @@ AXIS_MASK_WY = 16
 AXIS_MASK_WZ = 32
 
 effector   = "RArm" #LArm or RArm
-NAO_IP = '192.168.1.4';
+NAO_IP = '192.168.1.2';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
 
 def on_traj(traj):
@@ -43,6 +43,8 @@ def on_traj(traj):
         target_frame = traj.header.frame_id
         target.header.frame_id = target_frame
         
+        '''
+        #go to first point then wait
         path = []; times = [];
         trajStartPosition = traj.poses[0].pose.position;
         traj.poses[0].pose.position.z = 0.05
@@ -54,7 +56,8 @@ def on_traj(traj):
         path.append(point);
         timeToStartPosition = traj.poses[0].header.stamp.to_sec();
         times.append(timeToStartPosition);
-        motionProxy.positionInterpolation(effector,space,path,axisMask,times,isAbsolute);
+        motionProxy.setPosition(effector,space,point,0.5,axisMask);#,times,isAbsolute);
+        '''
         path = []; times = [];
         for trajp in traj.poses:
         
@@ -66,14 +69,15 @@ def on_traj(traj):
             
             point = [target_robot.pose.position.x,target_robot.pose.position.y,target_robot.pose.position.z,roll,0,0]#roll,pitch,yaw];
             path.append(point);
-            times.append(trajp.header.stamp.to_sec() - timeToStartPosition);
+            times.append(trajp.header.stamp.to_sec() )#- timeToStartPosition);
         
         #wait until time instructed to start executing
-        rospy.sleep(traj.header.stamp-rospy.Time.now()+rospy.Duration(timeToStartPosition));
+        rospy.sleep(traj.header.stamp-rospy.Time.now())#+rospy.Duration(timeToStartPosition));
         print("executing rest of traj at "+str(rospy.Time.now())) ;
         startTime = rospy.Time.now();
         #pdb.set_trace()
-        motionProxy.positionInterpolation(effector,space,path[1:],axisMask,times[1:],isAbsolute);
+        #times[0]=times[1]/2;
+        motionProxy.positionInterpolation(effector,space,path,axisMask,times,isAbsolute);
         print("Time taken for rest of trajectory: "+str((rospy.Time.now()-startTime).to_sec()));
 
     else:
@@ -121,7 +125,7 @@ if __name__ == "__main__":
     rospy.sleep(2)
 
     space      = 2
-    axisMask   = AXIS_MASK_X+AXIS_MASK_Y+AXIS_MASK_Z+AXIS_MASK_WX#+AXIS_MASK_WY+AXIS_MASK_WZ#control all the effector's axes 7 almath.AXIS_MASK_VEL    # just control position
+    axisMask   = AXIS_MASK_X+AXIS_MASK_Y+AXIS_MASK_Z+AXIS_MASK_WX#+AXIS_MASK_WY#+AXIS_MASK_WY#control all the effector's axes 7 almath.AXIS_MASK_VEL    # just control position
     isAbsolute = True
     
     

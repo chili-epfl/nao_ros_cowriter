@@ -84,8 +84,8 @@ elif(naoConnected):
     dt = 0.1;
     delayBeforeExecuting = 3.5;
 else:
-    t0 = 0.5;
-    dt = 0.1;
+    t0 = 0.7;
+    dt = 0.3;
     delayBeforeExecuting = 3.5;
 sizeScale_height = 0.035;    #Desired height of shape (metres)
 sizeScale_width = 0.023;     #Desired width of shape (metres)
@@ -103,6 +103,7 @@ USER_DRAWN_SHAPES_TOPIC = 'user_shapes';
 WORDS_TOPIC = 'words_to_write';
 TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
 STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
+NEW_CHILD_TOPIC = 'new_child';
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_traj_downsampled = rospy.Publisher(SHAPE_TOPIC_DOWNSAMPLED, Path);
@@ -180,12 +181,12 @@ def onUserDrawnShapeReceived(message):
         if(shapeIndex_demoFor == -1):# or response.shape_id == -1): 
             print("Ignoring demo because not for valid shape");
         else:
-            if(stateMachine.get_state() == "WAITING_FOR_FEEDBACK" and demoShapeReceived is None): #only accept first stroke!
-            #or stateMachine.get_state() == "ASKING_FOR_FEEDBACK" 
+            if((stateMachine.get_state() == "WAITING_FOR_FEEDBACK" and demoShapeReceived is None)
+            or (stateMachine.get_state() == "ASKING_FOR_FEEDBACK" and demoShapeReceived is None)): #only accept first stroke!
                 demoShapeReceived = {'path': shape, 'shapeType_code': shapeIndex_demoFor}; #replace any existing feedback with new
                 print('Received demonstration');
             else:
-                demoShapeReceived = None; #ignore feedback
+                pass; #ignore feedback
     
 def respondToDemonstration(infoFromPrevState):
     print('------------------------------------------ RESPONDING_TO_DEMONSTRATION');
@@ -263,9 +264,10 @@ def make_traj_msg(shape, shapeCentre, headerString, startTime, downsample, delta
         downsampleFactor = numPointsInShape_orig/float(numPointsInShape);
     else:
         numPointsInShape = numPointsInShape_orig;
-    
+
     for i in range(numPointsInShape):
         point = PoseStamped();
+
         point.pose.position.x = x_shape[i]*sizeScale_width;
         point.pose.position.y = -y_shape[i]*sizeScale_height;
         
@@ -273,11 +275,13 @@ def make_traj_msg(shape, shapeCentre, headerString, startTime, downsample, delta
         point.pose.position.y+= + shapeCentre[1];
         
         point.header.frame_id = FRAME;
-        point.header.stamp = rospy.Time(startTime+i*deltaT); #@todo allow for variable time between points for now
+        point.header.stamp = rospy.Time(startTime+i*deltaT+t0); #@todo allow for variable time between points for now
+
         if(penUpToFirst and i==0):
             point.header.seq = 1;
-        traj.poses.append(point);
-    
+
+        traj.poses.append(deepcopy(point));
+
     if(downsample):
         return traj, downsampleFactor
     else:
@@ -431,7 +435,9 @@ def publishShape(infoFromPrevState):
         
         headerString = shape.shapeType+'_'+str(shape.paramsToVary)+'_'+str(shape.paramValues);
         [traj_downsampled, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, t0, True, dt); #for robot
-        traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, dt/downsampleFactor);
+        downsampleFactor = float(numPoints_shapeModeler-1)/float(numDesiredShapePoints-1);
+        traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, float(dt)/downsampleFactor);
+        #traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, dt);
         trajStartPosition = traj.poses[0].pose.position;
         if(naoConnected):
             lookAtTablet();
@@ -440,7 +446,7 @@ def publishShape(infoFromPrevState):
            
     
     nextState = "WAITING_FOR_LETTER_TO_FINISH";
-    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER"};
+    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER",'state_goTo': ["ASKING_FOR_FEEDBACK"],'centre': trajStartPosition};
     if(len(shapesToPublish) > 0): #more shapes to publish
         state_goTo = deepcopy(drawingLetterSubstates);#come back to publish the remaining shapes
         infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "PUBLISHING_LETTER",'shapesToPublish': shapesToPublish,'centre': trajStartPosition};
@@ -467,14 +473,14 @@ def publishWord(infoFromPrevState):
         
         headerString = shape.shapeType+'_'+str(shape.paramsToVary)+'_'+str(shape.paramValues);
         [traj_downsampled, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt); #for robot
-        #print(downsampleFactor)
-        [traj, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt);
+        
+        downsampleFactor = float(numPoints_shapeModeler-1)/float(numDesiredShapePoints-1);
+        traj = make_traj_msg(shape.path, shapeCentre, headerString, startTime, False, float(dt)/downsampleFactor);
+        #[traj, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt);
         
         wholeTraj.poses.extend(deepcopy(traj.poses));
         wholeTraj_downsampled.poses.extend(deepcopy(traj_downsampled.poses));
-        startTime = traj.poses[-1].header.stamp.to_sec() + t0; #start after the previous shape finishes next time
-        #print(startTime)
-        #print(traj_downsampled.poses[-1].header.stamp.to_sec() + t0) #timings are off by dt when do downsampling.....
+        startTime = traj.poses[-1].header.stamp.to_sec()+1; #start after the previous shape finishes next time
     
     wholeTraj.header = traj.header;
     wholeTraj_downsampled.header = traj.header;
@@ -486,12 +492,10 @@ def publishWord(infoFromPrevState):
     
     shapesToPublish = [];
     nextState = "WAITING_FOR_LETTER_TO_FINISH";
-    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER"};
-    if(len(shapesToPublish) > 0): #more shapes to publish
-        state_goTo = deepcopy(drawingLetterSubstates);#come back to publish the remaining shapes
-        infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "PUBLISHING_LETTER",'shapesToPublish': shapesToPublish,'centre': trajStartPosition};
-    
+    infoForNextState = {'state_cameFrom':  "PUBLISHING_WORD",'state_goTo': ["ASKING_FOR_FEEDBACK"],'centre': trajStartPosition};
+
     return nextState, infoForNextState
+    
     
 infoToRestore_waitForShapeToFinish = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished); 
 global shape_finished_subscriber;
@@ -521,22 +525,14 @@ def waitForShapeToFinish(infoFromPrevState):
         except:
             #nothing planned..
             nextState = 'WAITING_FOR_FEEDBACK';
-            
+    '''       
     #act if the tablet disconnects
     if(not tabletWatchdog.isResponsive()):
         nextState = 'WAITING_FOR_TABLET_TO_CONNECT';
         infoForNextState = {'state_goTo': ['WAITING_FOR_FEEDBACK'], 'state_cameFrom': 'WAITING_FOR_LETTER_TO_FINISH'};
         #TODO go back and re-send whatever we just send that we never got the shapeFinished message for...
-     
-    global wordReceived
-    if(wordReceived is not None):
-        infoForNextState['wordReceived'] = wordReceived;
-        wordReceived = None;
-        nextState = "RESPONDING_TO_NEW_WORD";
-    global testRequestReceived
-    if(testRequestReceived):
-        testRequestReceived = None;
-        nextState = "RESPONDING_TO_TEST_CARD";
+    '''
+
     if(stopRequestReceived):
         nextState = "STOPPING";   
     
@@ -658,9 +654,6 @@ def respondToNewWord(infoFromPrevState):
         shape = wordManager.startNextShapeLearner();
         shapesToPublish.append(shape);
 
-    #state_goTo = deepcopy(drawingLetterSubstates);
-    #nextState = state_goTo.pop(0);
-    #infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
     nextState = 'PUBLISHING_WORD';
     infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
 
@@ -785,7 +778,24 @@ def startInteraction(infoFromPrevState):
 
 def onWordReceived(message):
     global wordReceived 
-    wordReceived = message;  
+
+    if(stateMachine.get_state() == "WAITING_FOR_FEEDBACK"
+    or stateMachine.get_state() == "WAITING_FOR_WORD"
+    or stateMachine.get_state() == "ASKING_FOR_FEEDBACK" ):
+        wordReceived = message;
+        print('Received word');
+    else:
+        wordReceived = None; #ignore 
+      
+def onNewChildReceived(message):
+    if(naoWriting):
+            nao.setpose("StandInit");
+    if(naoSpeaking):
+        toSay = "Hello. I'm Nao. Please show me a word to practice.";
+        lookAndAskForFeedback(toSay);
+    #clear screen
+    pub_clear.publish(Empty());
+    rospy.sleep(0.5);
 
 def waitForWord(infoFromPrevState):
     global wordReceived
@@ -817,9 +827,10 @@ def onFeedbackReceived(message):
 
 feedbackReceived = None;
 def waitForFeedback(infoFromPrevState):
+    
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_FEEDBACK"):
         print('------------------------------------------ WAITING_FOR_FEEDBACK');
-
+        
     #default behaviour is to loop
     nextState = "WAITING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "WAITING_FOR_FEEDBACK"};
@@ -925,7 +936,10 @@ if __name__ == "__main__":
         plt.ion(); #to plot one shape at a time
          
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
-    feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, onFeedbackReceived);
+    #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, onFeedbackReceived);
+    
+    #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
+    new_child_subscriber = rospy.Subscriber(NEW_CHILD_TOPIC, String, onNewChildReceived);
     
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, onWordReceived);
@@ -950,8 +964,8 @@ if __name__ == "__main__":
                         #or the first message will be missed (eg. first traj on tablet, first clear request locally)
     
     from watchdog import Watchdog #TODO: Make a ROS server so that *everyone* can access the connection statuses
-    tabletWatchdog = Watchdog('watchdog_clear/tablet', 2);
-    robotWatchdog = Watchdog('watchdog_clear/robot', 2);
+    tabletWatchdog = Watchdog('watchdog_clear/tablet', 0.3);
+    robotWatchdog = Watchdog('watchdog_clear/robot', 0.8);
     
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
@@ -964,7 +978,7 @@ if __name__ == "__main__":
             port)        # parent broker port
         textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
         textToSpeech.setLanguage('English')
-        textToSpeech.setVolume(0.2);
+        #textToSpeech.setVolume(1.0);
         if(naoWriting):
             nao.setpose("StandInit");
             [temp,joints_standInit] = nao.execute([naoqi_request("motion","getAngles",["RArm",True])]);
@@ -973,14 +987,6 @@ if __name__ == "__main__":
     #initialise word manager (passes feedback to shape learners and keeps history of words learnt)
     wordManager = ShapeLearnerManager(generateSettings);
             
-    wordToLearn = args.word;
-    if(wordToLearn is not None):
-        message = String();
-        message.data = wordToLearn;
-        onWordReceived(message);
-    else:
-        print('Waiting for word to write');
-    
     
     stateMachine = StateMachine();
     stateMachine.add_state("STARTING_INTERACTION", startInteraction);
@@ -1002,6 +1008,16 @@ if __name__ == "__main__":
     stateMachine.set_start("WAITING_FOR_ROBOT_TO_CONNECT");
     infoForStartState = {'state_goTo': ["STARTING_INTERACTION"], 'state_cameFrom': None};
     stateMachine.run(infoForStartState);
+    
+    wordToLearn = args.word;
+    if(wordToLearn is not None):
+        message = String();
+        message.data = wordToLearn;
+        onWordReceived(message);
+    else:
+        print('Waiting for word to write');
+    
+    
     
     rospy.spin();
 
