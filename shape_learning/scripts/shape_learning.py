@@ -523,22 +523,14 @@ def waitForShapeToFinish(infoFromPrevState):
         except:
             #nothing planned..
             nextState = 'WAITING_FOR_FEEDBACK';
-            
+    '''       
     #act if the tablet disconnects
     if(not tabletWatchdog.isResponsive()):
         nextState = 'WAITING_FOR_TABLET_TO_CONNECT';
         infoForNextState = {'state_goTo': ['WAITING_FOR_FEEDBACK'], 'state_cameFrom': 'WAITING_FOR_LETTER_TO_FINISH'};
         #TODO go back and re-send whatever we just send that we never got the shapeFinished message for...
-     
-    global wordReceived
-    if(wordReceived is not None):
-        infoForNextState['wordReceived'] = wordReceived;
-        wordReceived = None;
-        nextState = "RESPONDING_TO_NEW_WORD";
-    global testRequestReceived
-    if(testRequestReceived):
-        testRequestReceived = None;
-        nextState = "RESPONDING_TO_TEST_CARD";
+    '''
+
     if(stopRequestReceived):
         nextState = "STOPPING";   
     
@@ -660,9 +652,6 @@ def respondToNewWord(infoFromPrevState):
         shape = wordManager.startNextShapeLearner();
         shapesToPublish.append(shape);
 
-    #state_goTo = deepcopy(drawingLetterSubstates);
-    #nextState = state_goTo.pop(0);
-    #infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
     nextState = 'PUBLISHING_WORD';
     infoForNextState = {'state_cameFrom': "RESPONDING_TO_NEW_WORD",'shapesToPublish': shapesToPublish};
 
