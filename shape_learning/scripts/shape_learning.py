@@ -103,6 +103,7 @@ USER_DRAWN_SHAPES_TOPIC = 'user_shapes';
 WORDS_TOPIC = 'words_to_write';
 TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
 STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
+NEW_CHILD_TOPIC = 'new_child';
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_traj_downsampled = rospy.Publisher(SHAPE_TOPIC_DOWNSAMPLED, Path);
@@ -785,7 +786,17 @@ def onWordReceived(message):
         print('Received word');
     else:
         wordReceived = None; #ignore 
-   
+      
+def onNewChildReceived(message):
+    if(naoWriting):
+            nao.setpose("StandInit");
+    if(naoSpeaking):
+        toSay = "Hello. I'm Nao. Please show me a word to practice.";
+        lookAndAskForFeedback(toSay);
+    #clear screen
+    pub_clear.publish(Empty());
+    rospy.sleep(0.5);
+
 def waitForWord(infoFromPrevState):
     global wordReceived
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_WORD"):
@@ -925,7 +936,10 @@ if __name__ == "__main__":
         plt.ion(); #to plot one shape at a time
          
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
-    feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, onFeedbackReceived);
+    #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, onFeedbackReceived);
+    
+    #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
+    new_child_subscriber = rospy.Subscriber(NEW_CHILD_TOPIC, String, onNewChildReceived);
     
     #listen for words to write
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, onWordReceived);
