@@ -24,8 +24,10 @@ def processFeedback(feedback):
 
 def a4_sheet():
 
-    w = 0.21
-    h = 0.297
+    #w = 0.21
+    #h = 0.297
+    w = 0.217
+    h = 0.136
 
     sheet = Marker()
     sheet.pose.orientation.w = 1.0

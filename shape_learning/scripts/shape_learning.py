@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+# coding: utf-8
 
 """
 Publishes shapes specified in 'word' argument on the /shapes_to_draw 
@@ -29,19 +30,6 @@ from state_machine import StateMachine
 from copy import deepcopy
 drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO_CONNECT', 'PUBLISHING_LETTER'];
 
-demo_responses = ["Okay, I'll try it like you", "So that's how you write %s", "That's a much better %s than mine", "I'll try to copy you","Let me try now","Thank you"]
-demo_responses_counter = 0;
-asking_phrases_after_feedback = ["Any better?", "How about now?", "Now what do you think?","Is there a difference?", "Is this one okay?", "Will you show me how?", "Did I improve?"]
-asking_phrases_after_feedback_counter = 0;
-asking_phrases_after_word = ["Okay, what do you think?", "This is a hard word", "Is this how you write it?","Please help me"]
-asking_phrases_after_word_counter = 0;
-word_responses = ["%s, okay. ", "%s seems like a good word", "Hopefully I can do well with this word", "%s. Let's try", "Okay, %s now"];
-word_responses_counter = 0;
-word_responses_again = ["%s again, okay.", "I thought I already did %s", "You like to practice this word"];
-word_responses_again_counter = 0;
-            #demo_responses_counter,asking_phrases_after_feedback_counter,asking_phrases_after_word_counter,word_responses_counter,word_responses_again_counter
-
-
 #Nao parameters
 NAO_IP = '192.168.1.2';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
@@ -49,7 +37,35 @@ naoConnected = True;
 naoSpeaking = True;
 naoWriting = True;
 effector   = "RArm" #LArm or RArm
+naoLanguage = "French"; #'English' or 'French'
 
+if(naoLanguage=='English'):
+    introPhrase = "Hello. I'm Nao. Please show me a word to practice.";
+    demo_responses = ["Okay, I'll try it like you", "So that's how you write %s", "That's a much better %s than mine", "I'll try to copy you","Let me try now","Thank you"];
+    asking_phrases_after_feedback = ["Any better?", "How about now?", "Now what do you think?","Is there a difference?", "Is this one okay?", "Will you show me how?", "Did I improve?"];
+    asking_phrases_after_word = ["Okay, what do you think?", "This is a hard word", "Is this how you write it?","Please help me"];
+    word_responses = ["%s, okay. ", "%s seems like a good word", "Hopefully I can do well with this word", "%s. Let's try", "Okay, %s now"];
+    word_responses_again = ["%s again, okay.", "I thought I already did %s", "You like to practice this word"];
+    testPhrase = "Ok, test time. I'll try my best.";
+    thankYouPhrase = 'Thank you for your help.';
+elif(naoLanguage=='French'):
+    introPhrase = "Bonjour, je m'appelle Nao. s'il vous plaît me montrer un mot à la pratique";
+    demo_responses = ["D'accord, j'essaye comme ça", "Ah, c'est comme ça qu'on écrit %s", "Ce %s est pas mal", "Bon, j'essaye comme toi", "Ok, à moi", "À mon tour", "Merci, je vais essayer"];
+    asking_phrases_after_feedback = ["C'est mieux ?", "Et comme ça ?", "Tu en penses quoi ?", "Qu'est-ce que tu en penses ?", "Il y a une différence ?", "Ça va cette fois ?", "Je me suis amélioré ?", "Tu trouves que c'est mieux ?"];
+    asking_phrases_after_word = ["Bon, qu'est ce que tu en penses ?", "Pas facile !", "C'est bien comme ça ?", "Je crois que j'ai besoin d'aide...", "Et voilà !"];
+    word_responses = ["D'accord pour %s", "Ok, j'essaye %s", "Bon, je devrais y arriver", "D'accord", "%s ? ok"];
+    word_responses_again = ["Encore %s ? bon, d'accord...", "Je crois que j'ai déjà fait %s", "On dirait que tu aimes bien %s !", "Encore ?"];
+    testPhrase = "Ok, le temps d'essai. Je ferai de mon mieux."
+    thankYouPhrase = "Merci pour ton aide";
+else:
+    raise RuntimeError("Language not available");
+    
+demo_responses_counter = 0;
+asking_phrases_after_feedback_counter = 0;
+asking_phrases_after_word_counter = 0;
+word_responses_counter = 0;
+word_responses_again_counter = 0;
+    
 #shape learning parameters
 simulatedFeedback = False;  #Simulate user feedback as whichever shape is closest to goal parameter value
 boundExpandingAmount = 0.2; #How much to expand the previously-learnt parameter bounds by when the letter comes up again @TODO should be relative to parameter sensitivity
@@ -732,7 +748,7 @@ def respondToTestCard(infoFromPrevState):
     print('------------------------------------------ RESPONDING_TO_TEST_CARD');
     print('Show me a test word');
     if(naoSpeaking):
-        textToSpeech.say('Ok, test time. I\'ll try my best.');
+        textToSpeech.say(testPhrase);
     nextState = "WAITING_FOR_WORD";
     infoForNextState = {'state_cameFrom': "RESPONDING_TO_TEST_CARD"};
     return nextState, infoForNextState
@@ -745,7 +761,7 @@ def onStopRequestReceived(message):
 def stopInteraction(infoFromPrevState):
     print('------------------------------------------ STOPPING');
     if(naoSpeaking):
-        textToSpeech.say('Thank you for your help.');   
+        textToSpeech.say(thankYouPhrase);   
     if(naoConnected):
         nao.execute([naoqi_request("motion","rest",[])]);
 
@@ -768,8 +784,7 @@ def startInteraction(infoFromPrevState):
     print('Hey I\'m Nao');
     print("Do you have any words for me to write?");
     if(naoSpeaking):
-        toSay = "Hello. I'm Nao. Please show me a word to practice.";
-        lookAndAskForFeedback(toSay)
+        lookAndAskForFeedback(introPhrase)
     nextState = "WAITING_FOR_WORD";
     infoForNextState = {'state_cameFrom': "STARTING_INTERACTION"};
     if(stopRequestReceived):
@@ -958,6 +973,7 @@ if __name__ == "__main__":
         
     #initialise display manager for shapes (manages positioning of shapes)
     from display_manager.srv import *
+    print('Waiting for display manager services to become available');
     rospy.wait_for_service('clear_all_shapes');
     
     rospy.sleep(1.0);   #Allow some time for the subscribers to do their thing, 
@@ -977,7 +993,7 @@ if __name__ == "__main__":
             NAO_IP,      # parent broker IP
             port)        # parent broker port
         textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
-        textToSpeech.setLanguage('English')
+        textToSpeech.setLanguage(naoLanguage)
         #textToSpeech.setVolume(1.0);
         if(naoWriting):
             nao.setpose("StandInit");
