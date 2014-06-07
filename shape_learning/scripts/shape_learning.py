@@ -180,12 +180,12 @@ def onUserDrawnShapeReceived(message):
         if(shapeIndex_demoFor == -1):# or response.shape_id == -1): 
             print("Ignoring demo because not for valid shape");
         else:
-            if(stateMachine.get_state() == "WAITING_FOR_FEEDBACK" and demoShapeReceived is None): #only accept first stroke!
-            #or stateMachine.get_state() == "ASKING_FOR_FEEDBACK" 
+            if((stateMachine.get_state() == "WAITING_FOR_FEEDBACK" and demoShapeReceived is None)
+            or (stateMachine.get_state() == "ASKING_FOR_FEEDBACK" and demoShapeReceived is None)): #only accept first stroke!
                 demoShapeReceived = {'path': shape, 'shapeType_code': shapeIndex_demoFor}; #replace any existing feedback with new
                 print('Received demonstration');
             else:
-                demoShapeReceived = None; #ignore feedback
+                pass; #ignore feedback
     
 def respondToDemonstration(infoFromPrevState):
     print('------------------------------------------ RESPONDING_TO_DEMONSTRATION');
