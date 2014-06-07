@@ -13,7 +13,7 @@ from shape_modeler import ShapeModeler
 #shape learning parameters
 maxNumAttempts = 10000;      #Allowed attempts to draw a new shape which is significantly different to the previous one but still within the range (just a precaution; sampling should be theoretically possible)
 tol = 1e-2;                 #Tolerance on convergence test
-
+NUM_PRINCIPLE_COMPONENTS = 10;
 from recordtype import recordtype #for mutable namedtuple (dict might also work)
 SettingsStruct = recordtype('SettingsStruct', 
     ['shape_learning',  #String representing the shape which the object is learning
@@ -25,13 +25,13 @@ SettingsStruct = recordtype('SettingsStruct',
     'initialParamValue',#Initial parameter value (NaN if to be drawn uniformly from initialBounds)
     'minParamDiff']);   #How different two shapes' parameters need to be to be published for comparison
     #@todo: make groupwise comparison/pairwise comparison different implementations of shapeLearner class
-    
+   
 class ShapeLearner:
 
     def __init__(self, settings):
         self.paramsToVary = settings.paramsToVary;
-        self.numPrincipleComponents = max(self.paramsToVary);
-        
+        #self.numPrincipleComponents = max(self.paramsToVary);
+        self.numPrincipleComponents = NUM_PRINCIPLE_COMPONENTS;
         #assign a ShapeModeler to use
         shapeModeler = ShapeModeler();
         shapeModeler.makeDataMatrix(settings.datasetFile);
@@ -79,8 +79,9 @@ class ShapeLearner:
             self.shapeToParamsMapping = [self.params];
         else:
             self.newParamValue = self.bestParamValue;
-        
-        return shape, self.bestParamValue;
+            self.params = [self.newParamValue];
+            
+        return shape, self.params;
 
 ### ---------------------------------------- START LEARNING - TRIANGULAR       
     def startLearningAt(self, startingBounds, startingParamValues):
@@ -155,12 +156,8 @@ class ShapeLearner:
         #update bestParamValue based on feedback received
         if(self.doGroupwiseComparison):
             params_best = self.shapeToParamsMapping[bestShape];
-
-            diff_params = params_best - self.params;
-            diff = numpy.linalg.norm(diff_params);
-            self.params += diff_params/2; 
             
-            self.bestParamValue = self.params[self.paramsToVary[0]-1,0]; #USE ONLY FIRST PARAM FOR SELF-LEARNING ALGORITHM ATM
+            self.bestParamValue = params_best[self.paramsToVary[0]-1,0]; #USE ONLY FIRST PARAM FOR SELF-LEARNING ALGORITHM ATM
             print('Chosen param value: ' + str(self.bestParamValue));
             bestParamValue_index = bisect.bisect(self.params_sorted,self.bestParamValue) - 1; #indexing seems to start at 1 with bisect
             newBounds = [self.params_sorted[bestParamValue_index-1],self.params_sorted[bestParamValue_index+1]];
@@ -174,6 +171,9 @@ class ShapeLearner:
             if(not (newBounds[0]>newBounds[1])): #protect from bounds switching expected order
                 self.bounds[0,:] = newBounds;       #USE ONLY FIRST PARAM FOR SELF-LEARNING ALGORITHM ATM
                 
+            diff_params = params_best - self.params;
+            diff = numpy.linalg.norm(diff_params);
+            self.params += diff_params/2; 
         else: #do pairwise comparison with most recent shape and previous
             #restrict limits
             if( bestShape == 'new' ):   #new shape is better
@@ -229,7 +229,8 @@ class ShapeLearner:
         self.bounds = bounds;
  
     def respondToDemonstration(self, shape):
-        params_demo = self.shapeModeler.decomposeShape(shape);
+        [params_demo, modelError] = self.shapeModeler.decomposeShape(shape);
+        print('Error from modeling shape: '+str(modelError))
         diff_params = params_demo - self.params;
         diff = numpy.linalg.norm(diff_params);
         self.params += diff_params/2; #go towards the demonstrated shape
@@ -241,4 +242,4 @@ class ShapeLearner:
             bisect.insort(self.params_sorted, newParamValue);
             self.shapeToParamsMapping.append(self.params);
             #self.respondToFeedback(len(self.params_sorted)-3); # give feedback of most recent shape so bounds modify
-        return self.shapeModeler.makeShape(self.params);
+        return self.shapeModeler.makeShape(self.params), self.params;
