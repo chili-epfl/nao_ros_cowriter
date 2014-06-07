@@ -361,8 +361,13 @@ def generateSettings(shapeType):
 def lookAtShape(traj):
     trajStartPosition = traj.poses[0].pose.position;
     trajStartPosition_robot = tl.transformPose("base_footprint",target)
-    rospy.sleep(2.0);
-    nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,target_frame]); #look at shape again    
+    nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,target_frame]); #look at shape again 
+    
+def lookAtTablet():
+    if(effector=="RArm"):   #tablet will be on our right
+        nao.setpose({"HEAD":(-0.2, 0.08125996589660645)})   
+    else: 
+        nao.setpose({"HEAD":(0.2, 0.08125996589660645)}) 
     
 def lookAndAskForFeedback(toSay):
     if(naoWriting):
@@ -370,9 +375,9 @@ def lookAndAskForFeedback(toSay):
         nao.execute([naoqi_request("motion","angleInterpolationWithSpeed",["RArm",joints_standInit,0.2])])
     
     if(effector=="RArm"):   #person will be on our right
-        nao.look_at([0.3,-0.1,0.5,"base_link"]);
+        nao.setpose({"HEAD":(-0.9639739513397217, 0.08125996589660645)})
     else:                   #person will be on our left
-        nao.look_at([0.3,0.1,0.5,"base_link"]);  
+        nao.setpose({"HEAD":(0.9639739513397217, 0.08125996589660645)})
         
     if(naoSpeaking):
         textToSpeech.say(toSay);
@@ -429,7 +434,7 @@ def publishShape(infoFromPrevState):
         traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, dt/downsampleFactor);
         trajStartPosition = traj.poses[0].pose.position;
         if(naoConnected):
-            nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape        
+            lookAtTablet();
         pub_traj_downsampled.publish(traj_downsampled);
         pub_traj.publish(traj);
            
@@ -475,9 +480,7 @@ def publishWord(infoFromPrevState):
     wholeTraj_downsampled.header = traj.header;
     trajStartPosition = wholeTraj.poses[0].pose.position;
     if(naoConnected):
-        nao.look_at([trajStartPosition.x,trajStartPosition.y,trajStartPosition.z,FRAME]); #look at shape  
-    #import pdb; pdb.set_trace()
-    #print(wholeTraj)
+        lookAtTablet();
     pub_traj_downsampled.publish(wholeTraj_downsampled);
     pub_traj.publish(wholeTraj);  
     
@@ -689,12 +692,9 @@ def askForFeedback(infoFromPrevState):
             asking_phrases_after_word_counter += 1;
             if(asking_phrases_after_word_counter==len(asking_phrases_after_word)):
                 asking_phrases_after_word_counter = 0;
-            #toSay = "What do you think?";
+
             lookAndAskForFeedback(toSay);
-            #rospy.sleep(0.7);
-            nao.setpose({"HEAD":(-0.2, 0.08125996589660645)}) 
-            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
+            lookAtTablet();
     elif(infoFromPrevState['state_cameFrom'] == "PUBLISHING_LETTER"):
         print('Asking for feedback on letter...');
         if(naoSpeaking):
@@ -707,20 +707,13 @@ def askForFeedback(infoFromPrevState):
             if(asking_phrases_after_feedback_counter==len(asking_phrases_after_feedback)):
                 asking_phrases_after_feedback_counter = 0;
             
-            #toSay = "How about now?";
             lookAndAskForFeedback(toSay);
-            #rospy.sleep(0.7);
-            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
-            nao.setpose({"HEAD":(-0.2, 0.08125996589660645)}) 
+            lookAtTablet();
     elif(infoFromPrevState['state_cameFrom'] == "RESPONDING_TO_DEMONSTRATION"):
         print('Asking for feedback on demo response...');
         if(naoSpeaking):
             lookAndAskForFeedback("How about now?");
-            #rospy.sleep(0.7);
-            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again  
-            nao.setpose({"HEAD":(-0.2, 0.08125996589660645)}) 
+            lookAtTablet();
     nextState = "WAITING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "ASKING_FOR_FEEDBACK"};
     global wordReceived;
@@ -784,7 +777,6 @@ def startInteraction(infoFromPrevState):
     if(naoSpeaking):
         toSay = "Hello. I'm Nao. Please show me a word to practice.";
         lookAndAskForFeedback(toSay)
-        #textToSpeech.say("Hey. Please show me a word to practice.");
     nextState = "WAITING_FOR_WORD";
     infoForNextState = {'state_cameFrom': "STARTING_INTERACTION"};
     if(stopRequestReceived):
