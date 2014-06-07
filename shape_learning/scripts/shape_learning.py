@@ -33,9 +33,9 @@ drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO
 #Nao parameters
 NAO_IP = '192.168.1.2';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
-naoConnected = True;
-naoSpeaking = True;
-naoWriting = True;
+naoConnected = False;
+naoSpeaking = False;
+naoWriting = False;
 effector   = "RArm" #LArm or RArm
 naoLanguage = "French"; #'English' or 'French'
 
@@ -136,73 +136,95 @@ if(naoConnected):
 else:
     rospy.init_node("shape_learner");
 
-### ------------------------------------------------------ MESSAGE MAKER
-
-demoShapeReceived = None;
-def onUserDrawnShapeReceived(message):
-    global demoShapeReceived
-    x_shape = [];
-    y_shape = [];
-    for poseStamped in message.poses:
-        x_shape.append(poseStamped.pose.position.x);
-        y_shape.append(-poseStamped.pose.position.y);
-        
-    numPointsInShape = len(x_shape); 
     
-    if(numPointsInShape<15):
-        if(numPointsInShape>0):
-            print('Ignoring shape because it wasn\'t long enough');
+strokes=[];
+def userShapePreprocessor(message):
+    global strokes
+    
+    if(len(message.poses)==0):
+        #decide what to do with strokes received
+        length_longestStroke = 0;
+        for stroke in strokes:
+            if(stroke.shape[0]>length_longestStroke):
+                longestStroke = stroke;
+                length_longestStroke = stroke.shape[0];
+        
+        #tell how to interpret the shape intended for
+        if(message._connection_header['callerid'] == '/child_tablet/interaction_manager'):
+            positionToShapeMappingMethod = 'basedOnColumnOfScreen';
+        else:
+            positionToShapeMappingMethod = 'basedOnShapeAtPosition';
+        onUserDrawnShapeReceived(longestStroke,positionToShapeMappingMethod); 
+        strokes = [];
     else:
+        print('Got stroke to write with '+str(len(message.poses))+' points');
+        x_shape = [];
+        y_shape = [];
+        for poseStamped in message.poses:
+            x_shape.append(poseStamped.pose.position.x);
+            y_shape.append(-poseStamped.pose.position.y);
+            
+        numPointsInShape = len(x_shape); 
+
         shape = [];
         shape[0:numPointsInShape] = x_shape;
         shape[numPointsInShape:] = y_shape;
         
-        location = ShapeModeler.getShapeCentre(numpy.array(shape));
-        try:
-            if(message._connection_header['callerid'] == '/child_tablet/interaction_manager'):
-                #map to shapelearner based on third of the screen demo was in
-                if(location[0]<.21/3):
-                    shapeIndex_demoFor = 0;
-                elif(location[0]>.21/3*2):
-                    shapeIndex_demoFor = 2;
-                else:
-                    shapeIndex_demoFor = 1;
-            else: #/android_gingerbread/interaction_manager'
-                shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
-                request = shapeAtLocationRequest();
-                request.location.x = location[0];
-                request.location.y = location[1];
-                response = shape_at_location(request);
-                shapeIndex_demoFor = response.shape_type_code;
+        shape = numpy.reshape(shape, (-1, 1)); #explicitly make it 2D array with only one column
+        strokes.append(shape);
+
+
+
+demoShapeReceived = None;
+def onUserDrawnShapeReceived(path, positionToShapeMappingMethod):
+    global demoShapeReceived
             
-            #TODO: map to closest shape on screen
-            '''
-            closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
-            request = closestShapeToLocationRequest();
-            request.location.x = location[0];
-            request.location.y = location[1];
-            response = closest_shape_to_location(request);
-            shapeIndex_demoFor = response.shape_type_code;
-           
-            index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
-            request = indexOfLocationRequest();
-            request.location.x = location[0];
-            request.location.y = location[1];
-            response = index_of_location(request);
-            shapeIndex_demoFor = 0#response.row;
-             '''
-        except rospy.ServiceException, e:
-            print "Service call failed: %s"%e
-    
-        if(shapeIndex_demoFor == -1):# or response.shape_id == -1): 
-            print("Ignoring demo because not for valid shape");
-        else:
-            if((stateMachine.get_state() == "WAITING_FOR_FEEDBACK" and demoShapeReceived is None)
-            or (stateMachine.get_state() == "ASKING_FOR_FEEDBACK" and demoShapeReceived is None)): #only accept first stroke!
-                demoShapeReceived = {'path': shape, 'shapeType_code': shapeIndex_demoFor}; #replace any existing feedback with new
-                print('Received demonstration');
+    location = ShapeModeler.getShapeCentre(path);
+    try:
+        if(positionToShapeMappingMethod == 'basedOnColumnOfScreen'):
+            #map to shapelearner based on third of the screen demo was in
+            if(location[0]<.21/3):
+                shapeIndex_demoFor = 0;
+            elif(location[0]>.21/3*2):
+                shapeIndex_demoFor = 2;
             else:
-                pass; #ignore feedback
+                shapeIndex_demoFor = 1;
+        else: #/android_gingerbread/interaction_manager'
+            shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
+            request = shapeAtLocationRequest();
+            request.location.x = location[0];
+            request.location.y = location[1];
+            response = shape_at_location(request);
+            shapeIndex_demoFor = response.shape_type_code;
+        
+        #TODO: map to closest shape on screen
+        '''
+        closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
+        request = closestShapeToLocationRequest();
+        request.location.x = location[0];
+        request.location.y = location[1];
+        response = closest_shape_to_location(request);
+        shapeIndex_demoFor = response.shape_type_code;
+       
+        index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
+        request = indexOfLocationRequest();
+        request.location.x = location[0];
+        request.location.y = location[1];
+        response = index_of_location(request);
+        shapeIndex_demoFor = 0#response.row;
+         '''
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
+    
+    if(shapeIndex_demoFor == -1):# or response.shape_id == -1): 
+        print("Ignoring demo because not for valid shape");
+    else:
+        if((stateMachine.get_state() == "WAITING_FOR_FEEDBACK" and demoShapeReceived is None)
+        or (stateMachine.get_state() == "ASKING_FOR_FEEDBACK" and demoShapeReceived is None)): #only accept first stroke!
+            demoShapeReceived = {'path': path, 'shapeType_code': shapeIndex_demoFor}; #replace any existing feedback with new
+            print('Received demonstration');
+        else:
+            pass; #ignore feedback
     
 def respondToDemonstration(infoFromPrevState):
     print('------------------------------------------ RESPONDING_TO_DEMONSTRATION');
@@ -213,6 +235,10 @@ def respondToDemonstration(infoFromPrevState):
     x_shape = shape[0:numPointsInShape];
     y_shape = shape[numPointsInShape:];
     
+    if isinstance(x_shape,numpy.ndarray): #convert arrays to lists for interp1d
+        x_shape = (x_shape.T).tolist()[0];
+        y_shape = (y_shape.T).tolist()[0];
+        
     #make shape have the same number of points as the shape_modeler
     t_current = numpy.linspace(0, 1, numPointsInShape);
     t_desired = numpy.linspace(0, 1, numPoints_shapeModeler);
@@ -796,12 +822,13 @@ def onWordReceived(message):
 
     if(stateMachine.get_state() == "WAITING_FOR_FEEDBACK"
     or stateMachine.get_state() == "WAITING_FOR_WORD"
-    or stateMachine.get_state() == "ASKING_FOR_FEEDBACK" ):
+    or stateMachine.get_state() == "ASKING_FOR_FEEDBACK" 
+    or stateMachine.get_state() is None): #state machine hasn't started yet - word probably came from input arguments
         wordReceived = message;
         print('Received word');
     else:
         wordReceived = None; #ignore 
-      
+          
 def onNewChildReceived(message):
     if(naoWriting):
             nao.setpose("StandInit");
@@ -969,14 +996,14 @@ if __name__ == "__main__":
     stop_subscriber = rospy.Subscriber(STOP_TOPIC, Empty, onStopRequestReceived); 
     
     #listen for user-drawn shapes
-    shape_subscriber = rospy.Subscriber(USER_DRAWN_SHAPES_TOPIC, Path, onUserDrawnShapeReceived); 
+    shape_subscriber = rospy.Subscriber(USER_DRAWN_SHAPES_TOPIC, Path, userShapePreprocessor); 
         
     #initialise display manager for shapes (manages positioning of shapes)
     from display_manager.srv import *
     print('Waiting for display manager services to become available');
     rospy.wait_for_service('clear_all_shapes');
     
-    rospy.sleep(1.0);   #Allow some time for the subscribers to do their thing, 
+    rospy.sleep(2.0);   #Allow some time for the subscribers to do their thing, 
                         #or the first message will be missed (eg. first traj on tablet, first clear request locally)
     
     from watchdog import Watchdog #TODO: Make a ROS server so that *everyone* can access the connection statuses
@@ -1023,7 +1050,6 @@ if __name__ == "__main__":
     stateMachine.add_state("EXIT", None, end_state=True);
     stateMachine.set_start("WAITING_FOR_ROBOT_TO_CONNECT");
     infoForStartState = {'state_goTo': ["STARTING_INTERACTION"], 'state_cameFrom': None};
-    stateMachine.run(infoForStartState);
     
     wordToLearn = args.word;
     if(wordToLearn is not None):
@@ -1033,7 +1059,7 @@ if __name__ == "__main__":
     else:
         print('Waiting for word to write');
     
-    
+    stateMachine.run(infoForStartState);    
     
     rospy.spin();
 
