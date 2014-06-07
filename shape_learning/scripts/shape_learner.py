@@ -221,7 +221,13 @@ class ShapeLearner:
             self.newParamValue = newParamValue;     
             print('Converged');  
             return self.numItersConverged, newShape, newParamValue   
-            
+    
+    def getLearnedParams(self):
+        return self.params;
+        
+    def getLearnedShape(self):
+        return self.shapeModeler.makeShape(self.params), self.params
+    
     def getParameterBounds(self):
         return self.bounds;
     

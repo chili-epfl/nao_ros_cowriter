@@ -12,7 +12,8 @@ from shape_learner import ShapeLearner
 import numpy          
 from recordtype import recordtype #for mutable namedtuple (dict might also work)
          
-boundExpandingAmount = 0.2;
+boundExpandingAmount = 0.;
+usePrevParamsWhenShapeReappears = True;
 
 Shape = recordtype('Shape',['path', 'shapeID', 'shapeType', 'shapeType_code', 'paramsToVary', 'paramValues']);
 
@@ -25,6 +26,7 @@ class ShapeLearnerManager:
         self.shapeLearners_currentCollection = [];
         self.settings_shapeLearners_all = [];
         self.settings_shapeLearners_currentCollection = [];
+        self.shapeLearnersSeenBefore_currentCollection = [];
         self.currentCollection = [];
         self.collectionsLearnt = [];
         self.nextShapeLearnerToBeStarted = 0;
@@ -33,6 +35,7 @@ class ShapeLearnerManager:
     def initialiseShapeLearners(self):
         self.shapeLearners_currentCollection = [];
         self.settings_shapeLearners_currentCollection = [];
+        self.shapeLearnersSeenBefore_currentCollection = [];
         for i in range(len(self.currentCollection)):
             shapeType = self.currentCollection[i];
             
@@ -42,7 +45,7 @@ class ShapeLearnerManager:
                 newShape = False;
             except ValueError: 
                 newShape = True;
-            
+            self.shapeLearnersSeenBefore_currentCollection.append(not newShape);
             if(newShape):
                 settings = self.generateSettings(shapeType); 
 
@@ -70,12 +73,15 @@ class ShapeLearnerManager:
             shapeType = self.currentCollection[self.nextShapeLearnerToBeStarted];
             shapeType_code = self.nextShapeLearnerToBeStarted;
             shape_index = self.indexOfShapeInCurrentCollection(shapeType);
-            [path, paramValues] = self.shapeLearners_currentCollection[shape_index].startLearning();
+            if(usePrevParamsWhenShapeReappears and 
+            self.shapeLearnersSeenBefore_currentCollection[self.nextShapeLearnerToBeStarted]): #shape has been seen before
+                [path, paramValues] = self.shapeLearners_currentCollection[shape_index].getLearnedShape();
+            else:
+                [path, paramValues] = self.shapeLearners_currentCollection[shape_index].startLearning();
             paramsToVary = self.settings_shapeLearners_currentCollection[shape_index].paramsToVary;
             self.nextShapeLearnerToBeStarted += 1;
             shape = Shape(path=path, shapeID=0, shapeType=shapeType, 
                 shapeType_code=shapeType_code, paramsToVary=paramsToVary, paramValues=paramValues);
-
             return shape;
         else:
             print('Don\'t know what shape learner you want me to start...');

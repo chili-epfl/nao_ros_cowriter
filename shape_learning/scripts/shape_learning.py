@@ -1007,7 +1007,7 @@ if __name__ == "__main__":
                         #or the first message will be missed (eg. first traj on tablet, first clear request locally)
     
     from watchdog import Watchdog #TODO: Make a ROS server so that *everyone* can access the connection statuses
-    tabletWatchdog = Watchdog('watchdog_clear/tablet', 0.3);
+    tabletWatchdog = Watchdog('watchdog_clear/tablet', 0.4);
     robotWatchdog = Watchdog('watchdog_clear/robot', 0.8);
     
     if(naoConnected):
