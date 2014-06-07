@@ -84,8 +84,8 @@ elif(naoConnected):
     dt = 0.1;
     delayBeforeExecuting = 3.5;
 else:
-    t0 = 0.5;
-    dt = 0.1;
+    t0 = 0.7;
+    dt = 0.3;
     delayBeforeExecuting = 3.5;
 sizeScale_height = 0.035;    #Desired height of shape (metres)
 sizeScale_width = 0.023;     #Desired width of shape (metres)
@@ -263,9 +263,10 @@ def make_traj_msg(shape, shapeCentre, headerString, startTime, downsample, delta
         downsampleFactor = numPointsInShape_orig/float(numPointsInShape);
     else:
         numPointsInShape = numPointsInShape_orig;
-    
+
     for i in range(numPointsInShape):
         point = PoseStamped();
+
         point.pose.position.x = x_shape[i]*sizeScale_width;
         point.pose.position.y = -y_shape[i]*sizeScale_height;
         
@@ -776,8 +777,15 @@ def startInteraction(infoFromPrevState):
 
 def onWordReceived(message):
     global wordReceived 
-    wordReceived = message;  
 
+    if(stateMachine.get_state() == "WAITING_FOR_FEEDBACK"
+    or stateMachine.get_state() == "WAITING_FOR_WORD"
+    or stateMachine.get_state() == "ASKING_FOR_FEEDBACK" ):
+        wordReceived = message;
+        print('Received word');
+    else:
+        wordReceived = None; #ignore 
+   
 def waitForWord(infoFromPrevState):
     global wordReceived
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_WORD"):
@@ -808,9 +816,10 @@ def onFeedbackReceived(message):
 
 feedbackReceived = None;
 def waitForFeedback(infoFromPrevState):
+    
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_FEEDBACK"):
         print('------------------------------------------ WAITING_FOR_FEEDBACK');
-
+        
     #default behaviour is to loop
     nextState = "WAITING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "WAITING_FOR_FEEDBACK"};
@@ -941,8 +950,8 @@ if __name__ == "__main__":
                         #or the first message will be missed (eg. first traj on tablet, first clear request locally)
     
     from watchdog import Watchdog #TODO: Make a ROS server so that *everyone* can access the connection statuses
-    tabletWatchdog = Watchdog('watchdog_clear/tablet', 2);
-    robotWatchdog = Watchdog('watchdog_clear/robot', 2);
+    tabletWatchdog = Watchdog('watchdog_clear/tablet', 0.3);
+    robotWatchdog = Watchdog('watchdog_clear/robot', 0.8);
     
     if(naoConnected):
         from naoqi import ALBroker, ALProxy
@@ -955,7 +964,7 @@ if __name__ == "__main__":
             port)        # parent broker port
         textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
         textToSpeech.setLanguage('English')
-        textToSpeech.setVolume(0.2);
+        #textToSpeech.setVolume(1.0);
         if(naoWriting):
             nao.setpose("StandInit");
             [temp,joints_standInit] = nao.execute([naoqi_request("motion","getAngles",["RArm",True])]);
@@ -964,14 +973,6 @@ if __name__ == "__main__":
     #initialise word manager (passes feedback to shape learners and keeps history of words learnt)
     wordManager = ShapeLearnerManager(generateSettings);
             
-    wordToLearn = args.word;
-    if(wordToLearn is not None):
-        message = String();
-        message.data = wordToLearn;
-        onWordReceived(message);
-    else:
-        print('Waiting for word to write');
-    
     
     stateMachine = StateMachine();
     stateMachine.add_state("STARTING_INTERACTION", startInteraction);
@@ -993,6 +994,16 @@ if __name__ == "__main__":
     stateMachine.set_start("WAITING_FOR_ROBOT_TO_CONNECT");
     infoForStartState = {'state_goTo': ["STARTING_INTERACTION"], 'state_cameFrom': None};
     stateMachine.run(infoForStartState);
+    
+    wordToLearn = args.word;
+    if(wordToLearn is not None):
+        message = String();
+        message.data = wordToLearn;
+        onWordReceived(message);
+    else:
+        print('Waiting for word to write');
+    
+    
     
     rospy.spin();
 
