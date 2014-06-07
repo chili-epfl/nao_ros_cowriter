@@ -29,13 +29,25 @@ from state_machine import StateMachine
 from copy import deepcopy
 drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO_CONNECT', 'PUBLISHING_LETTER'];
 
+demo_responses = ["Okay, I'll try it like you", "So that's how you write %s", "That's a much better %s than mine", "I'll try to copy you","Let me try now","Thank you"]
+demo_responses_counter = 0;
+asking_phrases_after_feedback = ["Any better?", "How about now?", "Now what do you think?","Is there a difference?", "Is this one okay?", "Will you show me how?", "Did I improve?"]
+asking_phrases_after_feedback_counter = 0;
+asking_phrases_after_word = ["Okay, what do you think?", "This is a hard word", "Is this how you write it?","Please help me"]
+asking_phrases_after_word_counter = 0;
+word_responses = ["%s, okay. ", "%s seems like a good word", "Hopefully I can do well with this word", "%s. Let's try", "Okay, %s now"];
+word_responses_counter = 0;
+word_responses_again = ["%s again, okay.", "I thought I already did %s", "You like to practice this word"];
+word_responses_again_counter = 0;
+            #demo_responses_counter,asking_phrases_after_feedback_counter,asking_phrases_after_word_counter,word_responses_counter,word_responses_again_counter
+
 
 #Nao parameters
 NAO_IP = '192.168.1.2';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
-naoConnected = False;
-naoSpeaking = False;
-naoWriting = False;
+naoConnected = True;
+naoSpeaking = True;
+naoWriting = True;
 effector   = "RArm" #LArm or RArm
 
 #shape learning parameters
@@ -201,8 +213,21 @@ def respondToDemonstration(infoFromPrevState):
     if(args.show):
         plt.figure(1);
         ShapeModeler.normaliseAndShowShape(shape);
-        
+    
     shapeType = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_demoFor);
+    if(naoSpeaking):
+        global demo_responses_counter
+        try:
+            toSay = demo_responses[demo_responses_counter]%shapeType;
+        except TypeError:
+            toSay = demo_responses[demo_responses_counter];
+        demo_responses_counter += 1;
+        if(demo_responses_counter==len(demo_responses)):
+            demo_responses_counter = 0;
+        textToSpeech.say(toSay);
+        print('NAO: '+toSay);  
+    
+
     print("Received demo for " + shapeType);
     shape = wordManager.respondToDemonstration(shapeIndex_demoFor, shape);
     state_goTo = deepcopy(drawingLetterSubstates);
@@ -271,9 +296,10 @@ def generateSettings(shapeType):
     initialBounds = numpy.array([[numpy.NaN, numpy.NaN]]);
     
     if shapeType == 'a':
-        paramToVary = 6;
-        initialBounds_stdDevMultiples = numpy.array([[-5, 5]]);
+        paramsToVary = [6];
+        initialBounds_stdDevMultiples = numpy.array([[-3, 3]]);
         datasetFile = '../res/a_noHook_dataset.txt';
+        initialParamValue = 0.8; 
     elif shapeType == 'c':
         paramToVary = 4;
         initialBounds_stdDevMultiples = numpy.array([[-10, 10]]);
@@ -296,7 +322,7 @@ def generateSettings(shapeType):
         paramToVary = 3; 
         initialBounds_stdDevMultiples = numpy.array([[-6, 14]]);
         datasetFile = '../res/e_dataset.txt';
-        initialParamValue = 0.8;
+        #initialParamValue = 0.8;
     elif shapeType == 'm':
         paramToVary = 6; 
         initialBounds_stdDevMultiples = numpy.array([[-10, -6]]);
@@ -307,7 +333,7 @@ def generateSettings(shapeType):
         datasetFile = '../res/n_dataset.txt';
         initialParamValue = 0.0;
     elif shapeType == 'o':
-        paramToVary = 4;
+        paramsToVary = [4];
         initialBounds_stdDevMultiples = numpy.array([[-3.5, 3]]);
         datasetFile = '../res/o_dataset.txt';
     elif shapeType == 'r':
@@ -555,7 +581,7 @@ def respondToFeedback(infoFromPrevState):
             #pass feedback to shape manager
             response = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
             if(response == -1):
-                print('Something\'s gone wrong');
+                print('Something\'s gone wrong in the feedback manager');
             
         else:
             if(naoConnected):
@@ -563,9 +589,6 @@ def respondToFeedback(infoFromPrevState):
                 toSay = 'Ok, I\'ll work on the '+shape_messageFor;
                 print('NAO: '+toSay);
                 textToSpeech.say(toSay);
-                #nao.setpose("StandInit")
-                rospy.sleep(0.4);
-                #nao.execute([naoqi_request("motion","wbEnableEffectorControl",[effector,True])])
             
             [numItersConverged, newShape] = wordManager.feedbackManager(shapeIndex_messageFor, bestShape_index, noNewShape);
             
@@ -598,9 +621,26 @@ def respondToNewWord(infoFromPrevState):
     wordSeenBefore = wordManager.newCollection(wordToLearn);
     if(naoConnected):
         if(wordSeenBefore):
-            toSay = wordToLearn+' again, ok.';
+            #toSay = wordToLearn+' again, ok.';
+            global word_responses_again_counter
+            try:
+                toSay = word_responses_again[word_responses_again_counter]%wordToLearn;
+            except TypeError:
+                toSay = word_responses_again[word_responses_again_counter];
+            word_responses_again_counter += 1;
+            if(word_responses_again_counter==len(word_responses_again)):
+                word_responses_again_counter = 0;
+
         else:
-            toSay = wordToLearn+', alright.';
+            #toSay = wordToLearn+', alright.';
+            global word_responses_counter
+            try:
+                toSay = word_responses[word_responses_counter]%wordToLearn;
+            except TypeError:
+                toSay = word_responses[word_responses_counter];
+            word_responses_counter += 1;
+            if(word_responses_counter==len(word_responses)):
+                word_responses_counter = 0;
     
         print('NAO: '+toSay);
         textToSpeech.say(toSay);    
@@ -637,27 +677,50 @@ def respondToNewWord(infoFromPrevState):
 def askForFeedback(infoFromPrevState): 
     print('------------------------------------------ ASKING_FOR_FEEDBACK'); 
     centre = infoFromPrevState['centre']; 
-    if(infoFromPrevState['state_cameFrom'] == "RESPONDING_TO_NEW_WORD"):
+    print(infoFromPrevState['state_cameFrom'])
+    if(infoFromPrevState['state_cameFrom'] == "PUBLISHING_WORD"):
         print('Asking for feedback on word...');
-        if(naoConnected):
-            lookAndAskForFeedback("What do you think?");
-            rospy.sleep(0.7);
-            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
-    elif(infoFromPrevState['state_cameFrom'] == "RESPONDING_TO_FEEDBACK"):
+        if(naoSpeaking):
+            global asking_phrases_after_word_counter
+            try:
+                toSay = asking_phrases_after_word[asking_phrases_after_word_counter];
+            except TypeError:
+                toSay = asking_phrases_after_word[asking_phrases_after_word_counter];
+            asking_phrases_after_word_counter += 1;
+            if(asking_phrases_after_word_counter==len(asking_phrases_after_word)):
+                asking_phrases_after_word_counter = 0;
+            #toSay = "What do you think?";
+            lookAndAskForFeedback(toSay);
+            #rospy.sleep(0.7);
+            nao.setpose({"HEAD":(-0.2, 0.08125996589660645)}) 
+            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again (bug in pyrobots)
+    elif(infoFromPrevState['state_cameFrom'] == "PUBLISHING_LETTER"):
         print('Asking for feedback on letter...');
-        if(naoConnected):
-            lookAndAskForFeedback("How about now?");
-            rospy.sleep(0.7);
-            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
+        if(naoSpeaking):
+            global asking_phrases_after_feedback_counter
+            try:
+                toSay = asking_phrases_after_feedback[asking_phrases_after_feedback_counter];
+            except TypeError:
+                toSay = asking_phrases_after_feedback[asking_phrases_after_feedback_counter];
+            asking_phrases_after_feedback_counter += 1;
+            if(asking_phrases_after_feedback_counter==len(asking_phrases_after_feedback)):
+                asking_phrases_after_feedback_counter = 0;
+            
+            #toSay = "How about now?";
+            lookAndAskForFeedback(toSay);
+            #rospy.sleep(0.7);
+            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again   
+            nao.setpose({"HEAD":(-0.2, 0.08125996589660645)}) 
     elif(infoFromPrevState['state_cameFrom'] == "RESPONDING_TO_DEMONSTRATION"):
         print('Asking for feedback on demo response...');
-        if(naoConnected):
+        if(naoSpeaking):
             lookAndAskForFeedback("How about now?");
-            rospy.sleep(0.7);
-            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
-            nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again  
+            #rospy.sleep(0.7);
+            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again    
+            #nao.look_at([centre.x,centre.y,centre.z,FRAME]); #look at shape again  
+            nao.setpose({"HEAD":(-0.2, 0.08125996589660645)}) 
     nextState = "WAITING_FOR_FEEDBACK";
     infoForNextState = {'state_cameFrom': "ASKING_FOR_FEEDBACK"};
     global wordReceived;
@@ -719,7 +782,9 @@ def startInteraction(infoFromPrevState):
     print('Hey I\'m Nao');
     print("Do you have any words for me to write?");
     if(naoSpeaking):
-        textToSpeech.say("Hey. Please show me a word to practice.");
+        toSay = "Hello. I'm Nao. Please show me a word to practice.";
+        lookAndAskForFeedback(toSay)
+        #textToSpeech.say("Hey. Please show me a word to practice.");
     nextState = "WAITING_FOR_WORD";
     infoForNextState = {'state_cameFrom': "STARTING_INTERACTION"};
     if(stopRequestReceived):
