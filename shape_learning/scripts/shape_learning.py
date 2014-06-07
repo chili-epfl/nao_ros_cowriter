@@ -273,11 +273,13 @@ def make_traj_msg(shape, shapeCentre, headerString, startTime, downsample, delta
         point.pose.position.y+= + shapeCentre[1];
         
         point.header.frame_id = FRAME;
-        point.header.stamp = rospy.Time(startTime+i*deltaT); #@todo allow for variable time between points for now
+        point.header.stamp = rospy.Time(startTime+i*deltaT+t0); #@todo allow for variable time between points for now
+
         if(penUpToFirst and i==0):
             point.header.seq = 1;
-        traj.poses.append(point);
-    
+
+        traj.poses.append(deepcopy(point));
+
     if(downsample):
         return traj, downsampleFactor
     else:
@@ -431,7 +433,9 @@ def publishShape(infoFromPrevState):
         
         headerString = shape.shapeType+'_'+str(shape.paramsToVary)+'_'+str(shape.paramValues);
         [traj_downsampled, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, t0, True, dt); #for robot
-        traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, dt/downsampleFactor);
+        downsampleFactor = float(numPoints_shapeModeler-1)/float(numDesiredShapePoints-1);
+        traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, float(dt)/downsampleFactor);
+        #traj = make_traj_msg(shape.path, shapeCentre, headerString, t0, False, dt);
         trajStartPosition = traj.poses[0].pose.position;
         if(naoConnected):
             lookAtTablet();
@@ -440,7 +444,7 @@ def publishShape(infoFromPrevState):
            
     
     nextState = "WAITING_FOR_LETTER_TO_FINISH";
-    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER"};
+    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER",'state_goTo': ["ASKING_FOR_FEEDBACK"],'centre': trajStartPosition};
     if(len(shapesToPublish) > 0): #more shapes to publish
         state_goTo = deepcopy(drawingLetterSubstates);#come back to publish the remaining shapes
         infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "PUBLISHING_LETTER",'shapesToPublish': shapesToPublish,'centre': trajStartPosition};
@@ -467,14 +471,14 @@ def publishWord(infoFromPrevState):
         
         headerString = shape.shapeType+'_'+str(shape.paramsToVary)+'_'+str(shape.paramValues);
         [traj_downsampled, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt); #for robot
-        #print(downsampleFactor)
-        [traj, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt);
+        
+        downsampleFactor = float(numPoints_shapeModeler-1)/float(numDesiredShapePoints-1);
+        traj = make_traj_msg(shape.path, shapeCentre, headerString, startTime, False, float(dt)/downsampleFactor);
+        #[traj, downsampleFactor] = make_traj_msg(shape.path, shapeCentre, headerString, startTime, True, dt);
         
         wholeTraj.poses.extend(deepcopy(traj.poses));
         wholeTraj_downsampled.poses.extend(deepcopy(traj_downsampled.poses));
-        startTime = traj.poses[-1].header.stamp.to_sec() + t0; #start after the previous shape finishes next time
-        #print(startTime)
-        #print(traj_downsampled.poses[-1].header.stamp.to_sec() + t0) #timings are off by dt when do downsampling.....
+        startTime = traj.poses[-1].header.stamp.to_sec()+1; #start after the previous shape finishes next time
     
     wholeTraj.header = traj.header;
     wholeTraj_downsampled.header = traj.header;
@@ -486,12 +490,10 @@ def publishWord(infoFromPrevState):
     
     shapesToPublish = [];
     nextState = "WAITING_FOR_LETTER_TO_FINISH";
-    infoForNextState = {'state_cameFrom':  "PUBLISHING_LETTER"};
-    if(len(shapesToPublish) > 0): #more shapes to publish
-        state_goTo = deepcopy(drawingLetterSubstates);#come back to publish the remaining shapes
-        infoForNextState = {'state_goTo': state_goTo,'state_cameFrom': "PUBLISHING_LETTER",'shapesToPublish': shapesToPublish,'centre': trajStartPosition};
-    
+    infoForNextState = {'state_cameFrom':  "PUBLISHING_WORD",'state_goTo': ["ASKING_FOR_FEEDBACK"],'centre': trajStartPosition};
+
     return nextState, infoForNextState
+    
     
 infoToRestore_waitForShapeToFinish = rospy.Subscriber(SHAPE_FINISHED_TOPIC, String, onShapeFinished); 
 global shape_finished_subscriber;
