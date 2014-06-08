@@ -54,6 +54,13 @@ def handle_possible_to_display(request):
     print('If possible returned '+str(response.is_possible.data));
     return response;
 
+def handle_display_shape_at_location(request):
+    response = displayShapeAtLocationResponse();
+    location = [request.location.x, request.location.y];
+    response.success.data = shapeDisplayManager.displayShapeAtLocation(request.shape_type_code, location);
+    print('Shape added at :' +str(location))
+    return response;
+    
 def display_manager_server():
     rospy.init_node('display_manager_server')
     clear_service = rospy.Service('clear_all_shapes', clearAllShapes, handle_clear_all_shapes)
@@ -70,6 +77,9 @@ def display_manager_server():
     
     closest_shapes_to_location_service = rospy.Service('closest_shapes_to_location', closestShapesToLocation, handle_closest_shapes_to_location)
     print "Ready to determine closest shape(s) to location."
+    
+    display_shape_at_location_service = rospy.Service('display_shape_at_location', displayShapeAtLocation, handle_display_shape_at_location)
+    print "Ready to display new shapes at specific location."
     
     possible_to_display_service = rospy.Service('possible_to_display_shape', isPossibleToDisplayNewShape, handle_possible_to_display)
     print "Ready to determine is shape fits."

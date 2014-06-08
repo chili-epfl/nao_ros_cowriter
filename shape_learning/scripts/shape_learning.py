@@ -213,8 +213,21 @@ def onUserDrawnShapeReceived(path, positionToShapeMappingMethod):
                     shapeType_demoFor = closestShapes_type[0];
             else: #just use first in list
                 shapeType_demoFor = closestShapes_type[0];
-
-        #TODO: block areas where user drew from having robot letters
+            
+            #block the space from robot use
+            try:
+                display_shape_at_location = rospy.ServiceProxy('display_shape_at_location', displayShapeAtLocation);
+                request = displayShapeAtLocationRequest();
+                request.shape_type_code = shapeType_demoFor;
+                request.location.x = location[0];
+                request.location.y = location[1];
+                #todo: allow for blocking different sized shapes
+                response = display_shape_at_location(request);
+                result = response.success;
+                #todo: do something if unsuccessful
+            except rospy.ServiceException, e:
+                print "Service call failed: %s"%e
+           
         '''
         index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
         request = indexOfLocationRequest();

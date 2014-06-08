@@ -160,3 +160,24 @@ class ShapeDisplayManager: #TODO make implementation of abstract class/interface
                 i+=1;
         
         return shapeType_code, shapeID
+        
+    def displayShapeAtLocation(self, shapeType_code, location):
+        '''blocks the space at location from being used
+        '''
+        [row, col] = self.indexOfLocation(location);
+        numRows = self.shapesDrawn.shape[0];
+        numCols = self.shapesDrawn.shape[1];
+        
+        if(row>(numRows-1) or row<0):
+            print('Invalid row');
+            success = False;
+        elif(col>(numCols-1) or col<0):
+            print('Invalid column');
+            success = False;
+        else:
+            shapeID = numpy.equal(self.shapesDrawn[:,:,0],shapeType_code).sum();
+            self.shapesDrawn[row,col,0] = shapeType_code;
+            self.shapesDrawn[row,col,1] = shapeID;  
+            success = True;
+            
+        return success
