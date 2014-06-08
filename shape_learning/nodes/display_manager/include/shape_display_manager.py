@@ -114,3 +114,49 @@ class ShapeDisplayManager: #TODO make implementation of abstract class/interface
                 shapeID = int(shapeID);
 
         return shapeType_code, shapeID
+        
+    def closestShapesToLocation(self, location):
+        '''map a location to the closest shape(s) drawn at that location. 
+        If multiple shapes are adjacent to the location, all will be returned.
+        shapeType_code will be -1 if invalid location.
+        shapeID will be -1 if no shapes have been drawn.
+        '''
+        [row, col] = self.indexOfLocation(location);
+    
+        numRows = self.shapesDrawn.shape[0];
+        numCols = self.shapesDrawn.shape[1];
+        
+        if(row>(numRows-1) or row<0):
+            print('Invalid row');
+            shapeType_code = [-1];
+            shapeID = [0];
+        elif(col>(numCols-1) or col<0):
+            print('Invalid column');
+            shapeType_code = [-1];
+            shapeID = [0];
+        elif(numpy.all(numpy.isnan(self.shapesDrawn[:,:,0]))):
+            print('No shapes drawn yet');
+            shapeID = [-1];
+            shapeType_code = [0];
+        else:
+            #calculate distance of all drawn shapes
+            shapeIndexes = numpy.argwhere(numpy.isfinite(self.shapesDrawn[:,:,0]));
+            numShapesDrawn = shapeIndexes.shape[0];
+            distsToLocation = numpy.zeros(numShapesDrawn);
+            for i in range(numShapesDrawn):
+                distsToLocation[i] = numpy.sqrt((row-shapeIndexes[i,0])**2 + (col-shapeIndexes[i,1])**2);
+                
+            closest_indexes = numpy.argsort(distsToLocation);
+            
+            i = 0;
+            shapeType_code = [];
+            shapeID = [];
+            #return all of the shapes which are closest if there are multiple at the same distance
+            while(distsToLocation[closest_indexes[i]] == distsToLocation[closest_indexes[0]]):
+                nextClosest_row = shapeIndexes[closest_indexes[i],0];
+                nextClosest_col = shapeIndexes[closest_indexes[i],1];
+                shapeType_code.append(self.shapesDrawn[nextClosest_row,nextClosest_col,0]);
+                shapeID.append(self.shapesDrawn[nextClosest_row,nextClosest_col,1]);
+                i+=1;
+        
+        return shapeType_code, shapeID

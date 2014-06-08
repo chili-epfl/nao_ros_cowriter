@@ -152,8 +152,8 @@ def userShapePreprocessor(message):
         #tell how to interpret the shape intended for
         if(message._connection_header['callerid'] == '/child_tablet/interaction_manager'):
             positionToShapeMappingMethod = 'basedOnColumnOfScreen';
-        else:
-            positionToShapeMappingMethod = 'basedOnShapeAtPosition';
+        else:#/android_gingerbread/interaction_manager'
+            positionToShapeMappingMethod = 'basedOnClosestShapeToPosition';#'basedOnShapeAtPosition';
         onUserDrawnShapeReceived(longestStroke,positionToShapeMappingMethod); 
         strokes = [];
     else:
@@ -174,38 +174,48 @@ def userShapePreprocessor(message):
         strokes.append(shape);
 
 
-
+activeShapeForDemonstration_type = None;
 demoShapeReceived = None;
 def onUserDrawnShapeReceived(path, positionToShapeMappingMethod):
-    global demoShapeReceived
+    global demoShapeReceived, activeShapeForDemonstration_type
             
     location = ShapeModeler.getShapeCentre(path);
     try:
         if(positionToShapeMappingMethod == 'basedOnColumnOfScreen'):
             #map to shapelearner based on third of the screen demo was in
             if(location[0]<.21/3):
-                shapeIndex_demoFor = 0;
+                shapeType_demoFor = 0;
             elif(location[0]>.21/3*2):
-                shapeIndex_demoFor = 2;
+                shapeType_demoFor = 2;
             else:
-                shapeIndex_demoFor = 1;
-        else: #/android_gingerbread/interaction_manager'
+                shapeType_demoFor = 1;
+            
+        elif( positionToShapeMappingMethod == 'basedOnShapeAtPosition'):
             shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
             request = shapeAtLocationRequest();
             request.location.x = location[0];
             request.location.y = location[1];
             response = shape_at_location(request);
-            shapeIndex_demoFor = response.shape_type_code;
-        
-        #TODO: map to closest shape on screen
+            shapeType_demoFor = response.shape_type_code;
+            
+        else:
+            closest_shapes_to_location = rospy.ServiceProxy('closest_shapes_to_location', closestShapesToLocation);
+            request = closestShapesToLocationRequest();
+            request.location.x = location[0];
+            request.location.y = location[1];
+            response = closest_shapes_to_location(request);
+            closestShapes_type = response.shape_type_code;
+            if(len(closestShapes_type)>1 and activeShapeForDemonstration_type is not None):
+                try: #see if active shape is in list
+                    dummyIndex = closestShapes_type.index(activeShapeForDemonstration_type);
+                    shapeType_demoFor = activeShapeForDemonstration_type;
+                except ValueError: #just use first in list otherwise
+                    shapeType_demoFor = closestShapes_type[0];
+            else: #just use first in list
+                shapeType_demoFor = closestShapes_type[0];
+
+        #TODO: block areas where user drew from having robot letters
         '''
-        closest_shape_to_location = rospy.ServiceProxy('closest_shape_to_location', closestShapeToLocation);
-        request = closestShapeToLocationRequest();
-        request.location.x = location[0];
-        request.location.y = location[1];
-        response = closest_shape_to_location(request);
-        shapeIndex_demoFor = response.shape_type_code;
-       
         index_of_location = rospy.ServiceProxy('index_of_location', indexOfLocation);
         request = indexOfLocationRequest();
         request.location.x = location[0];
@@ -216,13 +226,14 @@ def onUserDrawnShapeReceived(path, positionToShapeMappingMethod):
     except rospy.ServiceException, e:
         print "Service call failed: %s"%e
     
-    if(shapeIndex_demoFor == -1):# or response.shape_id == -1): 
+    if(shapeType_demoFor == -1):# or response.shape_id == -1): 
         print("Ignoring demo because not for valid shape");
     else:
         if((stateMachine.get_state() == "WAITING_FOR_FEEDBACK" and demoShapeReceived is None)
         or (stateMachine.get_state() == "ASKING_FOR_FEEDBACK" and demoShapeReceived is None)): #only accept first stroke!
-            demoShapeReceived = {'path': path, 'shapeType_code': shapeIndex_demoFor}; #replace any existing feedback with new
+            demoShapeReceived = {'path': path, 'shapeType_code': shapeType_demoFor}; #replace any existing feedback with new
             print('Received demonstration');
+            activeShapeForDemonstration_type = shapeType_demoFor;
         else:
             pass; #ignore feedback
     

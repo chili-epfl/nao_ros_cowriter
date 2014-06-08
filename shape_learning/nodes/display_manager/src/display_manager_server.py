@@ -40,6 +40,13 @@ def handle_shape_at_location(request):
     [response.shape_type_code, response.shape_id] = shapeDisplayManager.shapeAtLocation(location);
     print('Shape at location returned: '+str(response.shape_type_code)+'_'+str(response.shape_id));
     return response;
+    
+def handle_closest_shapes_to_location(request):
+    response = closestShapesToLocationResponse();
+    location = [request.location.x, request.location.y];
+    [response.shape_type_code, response.shape_id] = shapeDisplayManager.closestShapesToLocation(location);
+    print('Closest shape(s) to location returned: '+str(response.shape_type_code)+'_'+str(response.shape_id));
+    return response;
 
 def handle_possible_to_display(request):
     response = isPossibleToDisplayNewShapeResponse();
@@ -60,6 +67,9 @@ def display_manager_server():
     
     shape_at_location_service = rospy.Service('shape_at_location', shapeAtLocation, handle_shape_at_location)
     print "Ready to determine shape at location."
+    
+    closest_shapes_to_location_service = rospy.Service('closest_shapes_to_location', closestShapesToLocation, handle_closest_shapes_to_location)
+    print "Ready to determine closest shape(s) to location."
     
     possible_to_display_service = rospy.Service('possible_to_display_shape', isPossibleToDisplayNewShape, handle_possible_to_display)
     print "Ready to determine is shape fits."

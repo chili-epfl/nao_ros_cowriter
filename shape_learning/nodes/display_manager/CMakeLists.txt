@@ -61,6 +61,7 @@ add_service_files(
    isPossibleToDisplayNewShape.srv
    indexOfLocation.srv
    shapeAtLocation.srv
+   closestShapesToLocation.srv
 )
 
 ## Generate actions in the 'action' folder
