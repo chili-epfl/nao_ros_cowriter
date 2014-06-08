@@ -115,6 +115,7 @@ minTimeBetweenTouches = 0.1  #Seconds allowed between touches for the second one
 CLEAR_SCREEN_TOPIC = 'clear_screen';
 SHAPE_FINISHED_TOPIC = 'shape_finished';
 USER_DRAWN_SHAPES_TOPIC = 'user_shapes';
+GESTURE_TOPIC = 'gesture_info';
 
 WORDS_TOPIC = 'words_to_write';
 TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
@@ -175,6 +176,26 @@ def userShapePreprocessor(message):
 
 
 activeShapeForDemonstration_type = None;
+def onSetActiveShapeGesture(message):
+    global activeShapeForDemonstration_type
+    
+    gestureLocation = [message.point.x, message.point.y];
+    #map gesture location to shape drawn
+    try:
+        shape_at_location = rospy.ServiceProxy('shape_at_location', shapeAtLocation);
+        request = shapeAtLocationRequest();
+        request.location.x = gestureLocation[0];
+        request.location.y = gestureLocation[1];
+        response = shape_at_location(request);
+        shapeType_code = response.shape_type_code;
+        shapeID = response.shape_id;
+    except rospy.ServiceException, e:
+        print "Service call failed: %s"%e
+        
+    if(shapeType_code != -1 and shapeID != -1):
+        activeShapeForDemonstration_type = shapeType_code;
+        print('Setting active shape to ' + wordManager.shapeAtIndexInCurrentCollection(activeShapeForDemonstration_type));
+
 demoShapeReceived = None;
 def onUserDrawnShapeReceived(path, positionToShapeMappingMethod):
     global demoShapeReceived, activeShapeForDemonstration_type
@@ -1004,7 +1025,10 @@ if __name__ == "__main__":
     #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
     #feedback_subscriber = rospy.Subscriber(FEEDBACK_TOPIC, String, onFeedbackReceived);
     
-    #subscribe to feedback topic with a feedback manager which will pass messages to appropriate shapeLearners
+    #listen for gesture representing active demo shape 
+    gesture_subscriber = rospy.Subscriber(GESTURE_TOPIC, PointStamped, onSetActiveShapeGesture); 
+    
+    #listen for a new child signal
     new_child_subscriber = rospy.Subscriber(NEW_CHILD_TOPIC, String, onNewChildReceived);
     
     #listen for words to write
