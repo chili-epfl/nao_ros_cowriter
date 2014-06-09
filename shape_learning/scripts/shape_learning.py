@@ -33,11 +33,15 @@ drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO
 #Nao parameters
 NAO_IP = '192.168.1.2';
 #NAO_IP = '127.0.0.1';#connect to webots simulator locally
-naoConnected = False;
-naoSpeaking = False;
-naoWriting = False;
+naoConnected = True;
+naoSpeaking = True;
+naoWriting = True;
 effector   = "RArm" #LArm or RArm
 naoLanguage = "French"; #'English' or 'French'
+
+alternateSidesLookingAt = False; #if true, nao will look to a different side each time. 
+global nextSideToLookAt
+nextSideToLookAt = 'Right';
 
 if(naoLanguage=='English'):
     introPhrase = "Hello. I'm Nao. Please show me a word to practice.";
@@ -129,9 +133,6 @@ pub_camera_status = rospy.Publisher(PUBLISH_STATUS_TOPIC,Bool);
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_traj_downsampled = rospy.Publisher(SHAPE_TOPIC_DOWNSAMPLED, Path);
 pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
-
-phrases_askingForFeedback = {"Any better?","How about now?"};
-phrases_actingOnFeedback_drawAgain = {"Ok, I\'ll work on the ","The "};
 
 wordReceived = None;
 if(naoConnected):
@@ -464,12 +465,12 @@ def lookAtTablet():
     else: 
         nao.setpose({"HEAD":(0.2, 0.08125996589660645)}) 
     
-def lookAndAskForFeedback(toSay):
+def lookAndAskForFeedback(toSay,side):
     if(naoWriting):
         #put arm down
         nao.execute([naoqi_request("motion","angleInterpolationWithSpeed",["RArm",joints_standInit,0.2])])
     
-    if(effector=="RArm"):   #person will be on our right
+    if(side=="Right"):   #person will be on our right
         nao.setpose({"HEAD":(-0.9639739513397217, 0.08125996589660645)})
     else:                   #person will be on our left
         nao.setpose({"HEAD":(0.9639739513397217, 0.08125996589660645)})
@@ -664,7 +665,7 @@ def respondToFeedback(infoFromPrevState):
                 
     if(processMessage):    
         if(noNewShape): #just respond to feedback, don't make new shape 
-            if(naoConnected):
+            if(naoSpeaking):
                 toSay = 'Ok, thanks for helping me';
                 print('NAO: '+toSay);
                 textToSpeech.say(toSay); 
@@ -674,7 +675,7 @@ def respondToFeedback(infoFromPrevState):
                 print('Something\'s gone wrong in the feedback manager');
             
         else:
-            if(naoConnected):
+            if(naoSpeaking):
                 shape_messageFor = wordManager.shapeAtIndexInCurrentCollection(shapeIndex_messageFor);
                 toSay = 'Ok, I\'ll work on the '+shape_messageFor;
                 print('NAO: '+toSay);
@@ -709,7 +710,7 @@ def respondToNewWord(infoFromPrevState):
     print("Cheers");
     wordToLearn = message.data;
     wordSeenBefore = wordManager.newCollection(wordToLearn);
-    if(naoConnected):
+    if(naoSpeaking):
         if(wordSeenBefore):
             #toSay = wordToLearn+' again, ok.';
             global word_responses_again_counter
@@ -776,8 +777,13 @@ def askForFeedback(infoFromPrevState):
             asking_phrases_after_word_counter += 1;
             if(asking_phrases_after_word_counter==len(asking_phrases_after_word)):
                 asking_phrases_after_word_counter = 0;
-
-            lookAndAskForFeedback(toSay);
+            global nextSideToLookAt
+            lookAndAskForFeedback(toSay,nextSideToLookAt);
+            if(alternateSidesLookingAt):
+                if(nextSideToLookAt == 'Left'):
+                    nextSideToLookAt = 'Right';
+                else:
+                    nextSideToLookAt = 'Left';
             lookAtTablet();
     elif(infoFromPrevState['state_cameFrom'] == "PUBLISHING_LETTER"):
         print('Asking for feedback on letter...');
@@ -790,8 +796,13 @@ def askForFeedback(infoFromPrevState):
             asking_phrases_after_feedback_counter += 1;
             if(asking_phrases_after_feedback_counter==len(asking_phrases_after_feedback)):
                 asking_phrases_after_feedback_counter = 0;
-            
-            lookAndAskForFeedback(toSay);
+            global nextSideToLookAt
+            lookAndAskForFeedback(toSay,nextSideToLookAt);
+            if(alternateSidesLookingAt):
+                if(nextSideToLookAt == 'Left'):
+                    nextSideToLookAt = 'Right';
+                else:
+                    nextSideToLookAt = 'Left';
             lookAtTablet();
     elif(infoFromPrevState['state_cameFrom'] == "RESPONDING_TO_DEMONSTRATION"):
         print('Asking for feedback on demo response...');
@@ -859,7 +870,8 @@ def startInteraction(infoFromPrevState):
     print('Hey I\'m Nao');
     print("Do you have any words for me to write?");
     if(naoSpeaking):
-        lookAndAskForFeedback(introPhrase)
+        global nextSideToLookAt
+        lookAndAskForFeedback(introPhrase,nextSideToLookAt);
     nextState = "WAITING_FOR_WORD";
     infoForNextState = {'state_cameFrom': "STARTING_INTERACTION"};
     if(stopRequestReceived):
@@ -882,8 +894,9 @@ def onNewChildReceived(message):
     if(naoWriting):
             nao.setpose("StandInit");
     if(naoSpeaking):
-        toSay = "Hello. I'm Nao. Please show me a word to practice.";
-        lookAndAskForFeedback(toSay);
+        global nextSideToLookAt
+        #toSay = "Hello. I'm Nao. Please show me a word to practice.";
+        lookAndAskForFeedback(introPhrase,nextSideToLookAt);
     #clear screen
     pub_clear.publish(Empty());
     rospy.sleep(0.5);
