@@ -92,7 +92,7 @@ FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
 SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
 SHAPE_TOPIC_DOWNSAMPLED = 'write_traj_downsampled'; #Name of topic to publish shapes to
 if(naoWriting):
-    t0 = 3;                 #Time allowed for the first point in traj (seconds)
+    t0 = 2;                 #Time allowed for the first point in traj (seconds)
     dt = 0.25               #Seconds between points in traj
     delayBeforeExecuting = 3;#How far in future to request the traj be executed (to account for transmission delays and preparedness)
 elif(naoConnected):
@@ -121,6 +121,10 @@ WORDS_TOPIC = 'words_to_write';
 TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
 STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
 NEW_CHILD_TOPIC = 'new_child';
+
+PUBLISH_STATUS_TOPIC = 'camera_publishing_status';
+from std_msgs.msg import Bool
+pub_camera_status = rospy.Publisher(PUBLISH_STATUS_TOPIC,Bool);
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_traj_downsampled = rospy.Publisher(SHAPE_TOPIC_DOWNSAMPLED, Path);
@@ -886,8 +890,10 @@ def onNewChildReceived(message):
 
 def waitForWord(infoFromPrevState):
     global wordReceived
+    
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_WORD"):
         print('------------------------------------------ WAITING_FOR_WORD');
+        pub_camera_status.publish(True); #turn camera on
     if(infoFromPrevState['state_cameFrom'] == "STARTING_INTERACTION"):
         pass
     
@@ -898,8 +904,10 @@ def waitForWord(infoFromPrevState):
         infoForNextState['wordReceived'] = wordReceived;
         wordReceived = None;
         nextState = "RESPONDING_TO_NEW_WORD";
+        pub_camera_status.publish(False); #turn camera off
     if(stopRequestReceived):
         nextState = "STOPPING";
+        pub_camera_status.publish(False); #turn camera off
     return nextState, infoForNextState
     
 def onFeedbackReceived(message):
@@ -917,6 +925,7 @@ def waitForFeedback(infoFromPrevState):
     
     if(infoFromPrevState['state_cameFrom'] != "WAITING_FOR_FEEDBACK"):
         print('------------------------------------------ WAITING_FOR_FEEDBACK');
+        pub_camera_status.publish(True); #turn camera on
         
     #default behaviour is to loop
     nextState = "WAITING_FOR_FEEDBACK";
@@ -955,6 +964,9 @@ def waitForFeedback(infoFromPrevState):
         
     if(stopRequestReceived):
         nextState = "STOPPING";
+        
+    if(nextState != 'WAITING_FOR_FEEDBACK'):
+        pub_camera_status.publish(False); #turn camera off
     return nextState, infoForNextState    
 
 #def respondToTabletDisconnect(infoFromPrevState):
