@@ -96,7 +96,7 @@ FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
 SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
 SHAPE_TOPIC_DOWNSAMPLED = 'write_traj_downsampled'; #Name of topic to publish shapes to
 if(naoWriting):
-    t0 = 2;                 #Time allowed for the first point in traj (seconds)
+    t0 = 3;                 #Time allowed for the first point in traj (seconds)
     dt = 0.25               #Seconds between points in traj
     delayBeforeExecuting = 3;#How far in future to request the traj be executed (to account for transmission delays and preparedness)
 elif(naoConnected):
@@ -150,17 +150,20 @@ def userShapePreprocessor(message):
     if(len(message.poses)==0):
         #decide what to do with strokes received
         length_longestStroke = 0;
-        for stroke in strokes:
-            if(stroke.shape[0]>length_longestStroke):
-                longestStroke = stroke;
-                length_longestStroke = stroke.shape[0];
-        
-        #tell how to interpret the shape intended for
-        if(message._connection_header['callerid'] == '/child_tablet/interaction_manager'):
-            positionToShapeMappingMethod = 'basedOnColumnOfScreen';
-        else:#/android_gingerbread/interaction_manager'
-            positionToShapeMappingMethod = 'basedOnClosestShapeToPosition';#'basedOnShapeAtPosition';
-        onUserDrawnShapeReceived(longestStroke,positionToShapeMappingMethod); 
+        try:
+            for stroke in strokes:
+                if(stroke.shape[0]>length_longestStroke):
+                    longestStroke = stroke;
+                    length_longestStroke = stroke.shape[0];
+            
+            #tell how to interpret the shape intended for
+            if(message._connection_header['callerid'] == '/child_tablet/interaction_manager'):
+                positionToShapeMappingMethod = 'basedOnColumnOfScreen';
+            else:#/android_gingerbread/interaction_manager'
+                positionToShapeMappingMethod = 'basedOnClosestShapeToPosition';#'basedOnShapeAtPosition';
+            onUserDrawnShapeReceived(longestStroke,positionToShapeMappingMethod); 
+        except UnboundLocalError:
+            print('empty demonstration. ignoring')
         strokes = [];
     else:
         print('Got stroke to write with '+str(len(message.poses))+' points');
