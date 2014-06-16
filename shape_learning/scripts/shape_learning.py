@@ -53,14 +53,14 @@ if(naoLanguage=='English'):
     testPhrase = "Ok, test time. I'll try my best.";
     thankYouPhrase = 'Thank you for your help.';
 elif(naoLanguage=='French'):
-    introPhrase = "Bonjour, je m'appelle Nao. s'il vous plaît me montrer un mot à la pratique";
+    introPhrase = "Bonjour, je m'appelle Nao. Peux-tu me montrer un mot ?";
     demo_responses = ["D'accord, j'essaye comme ça", "Ah, c'est comme ça qu'on écrit %s", "Ce %s est pas mal", "Bon, j'essaye comme toi", "Ok, à moi", "À mon tour", "Merci, je vais essayer"];
     asking_phrases_after_feedback = ["C'est mieux ?", "Et comme ça ?", "Tu en penses quoi ?", "Qu'est-ce que tu en penses ?", "Il y a une différence ?", "Ça va cette fois ?", "Je me suis amélioré ?", "Tu trouves que c'est mieux ?"];
-    asking_phrases_after_word = ["Bon, qu'est ce que tu en penses ?", "Pas facile !", "C'est bien comme ça ?", "Je crois que j'ai besoin d'aide...", "Et voilà !"];
+    asking_phrases_after_word = ["Bon, qu'est ce que tu en penses ?", "Pas facile !", "C'est bien comme ça ?", "Je crois que j'ai besoin d'aide.", "Et voilà !"];
     word_responses = ["D'accord pour %s", "Ok, j'essaye %s", "Bon, je devrais y arriver", "D'accord", "%s ? ok"];
-    word_responses_again = ["Encore %s ? bon, d'accord...", "Je crois que j'ai déjà fait %s", "On dirait que tu aimes bien %s !", "Encore ?"];
-    testPhrase = "Ok, le temps d'essai. Je ferai de mon mieux."
-    thankYouPhrase = "Merci pour ton aide";
+    word_responses_again = ["Encore %s ? bon, d'accord.", "Je crois que j'ai déjà fait %s", "On dirait que tu aimes bien %s !", "Encore ?"];
+    testPhrase = "Ok, c'est l'heure du test. J'ai un peu peur."
+    thankYouPhrase = "Merci pour ton aide !";
 else:
     raise RuntimeError("Language not available");
     
