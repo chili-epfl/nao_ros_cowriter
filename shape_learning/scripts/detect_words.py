@@ -7,10 +7,11 @@ import rospy
 import tf
 from std_msgs.msg import String, Empty
 
-tags_words_mapping = {'tag_5':'cow', 'tag_6':'son','tag_7':'cue','tag_8':'new','tag_9':'use', #english words
-                      #'tag_10':'cou','tag_11':'son','tag_12':'ces','tag_13':'une',
-                      #'tag_14':'sec','tag_15':'nos','tag_16':'ose','tag_17':'sac','tag_18':'eau', #french words
-                      'tag_12':'test','tag_11':'stop'}; #special tags
+tags_words_mapping = {#'tag_5':'cow', 'tag_6':'son','tag_7':'cue','tag_8':'new','tag_9':'use', #english words
+                      'tag_10':'cou','tag_11':'son','tag_12':'ces','tag_13':'une',
+                      'tag_14':'sec','tag_15':'nos','tag_16':'ose',#'tag_17':'sac','tag_18':'eau', #french words
+                      'tag_17':'test','tag_18':'stop' #special tags
+                          };
 
 WORDS_TOPIC = 'words_to_write';
 STOP_TOPIC = 'stop_learning';
