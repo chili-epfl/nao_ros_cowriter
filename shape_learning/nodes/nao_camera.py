@@ -99,14 +99,16 @@ class NaoCam (NaoNode):
             rospy.logerr('There was a problem loading the calibration file. Check the URL!')
             exit(1)
 
-
         # subscription to camProxy
         self.nameId = ''
         self.subscribe()
         
         # subscription to requests to start/stop publishing
-        self.sub_publish = rospy.Subscriber(PUBLISH_STATUS_TOPIC,Bool,setPublishingStatus)
+        self.sub_publish = rospy.Subscriber(PUBLISH_STATUS_TOPIC,Bool,self.setPublishingStatus)
 
+        # capture a dummy image
+        self.dummyImage = self.camProxy.getImageRemote(self.nameId)
+        
 
     def subscribe(self):
         # unsubscribe for all zombie subscribers
@@ -172,15 +174,74 @@ class subscriptionListener(rospy.SubscribeListener):
             print('no one left');
             subscribersConnected = False;
 '''
-def setPublishingStatus(message):
-    global publishStatus
-    publishStatus = message.data
-    print(message);
-    if(publishStatus == False):
-        print('Turning publishing off')
-    else:
-        print('Turning publishing on')
+    def setPublishingStatus(self,message):
+        global publishStatus
+        publishStatus = message.data
+        print(message);
+        if(publishStatus == False):
+            print('Turning publishing off')
+            img = Image()
+            for i in range(5):
+                image = self.dummyImage
+                #waste an image
+                stampAL = image[4] + image[5]*1e-6
+                #print image[5],  stampAL, "%lf"%(stampAL)
+                img.header.stamp = rospy.Time(stampAL)
+                img.header.frame_id = self.frame_id
+                img.height = image[1]
+                img.width = image[0]
+                nbLayers = image[2]
+                if image[3] == kYUVColorSpace:
+                    encoding = "mono8"
+                elif image[3] == kRGBColorSpace:
+                    encoding = "rgb8"
+                elif image[3] == kBGRColorSpace:
+                    encoding = "bgr8"
+                elif image[3] == kYUV422ColorSpace:
+                    encoding = "yuv422" # this works only in ROS groovy and later
+                else:
+                    rospy.logerror("Received unknown encoding: {0}".format(image[3]))
 
+                img.encoding = encoding
+                img.step = img.width * nbLayers
+                img.data = image[6]
+                infomsg = self.cim.getCameraInfo()
+                infomsg.header = img.header
+                self.pub_info_.publish(infomsg)
+                self.pub_img_.publish(img)
+        else:
+            print('Turning publishing on')
+            self.subscribe()
+            img = Image()
+            for i in range(5):
+                image = self.dummyImage
+                #waste an image
+                stampAL = image[4] + image[5]*1e-6
+                #print image[5],  stampAL, "%lf"%(stampAL)
+                img.header.stamp = rospy.Time(stampAL)
+                img.header.frame_id = self.frame_id
+                img.height = image[1]
+                img.width = image[0]
+                nbLayers = image[2]
+                if image[3] == kYUVColorSpace:
+                    encoding = "mono8"
+                elif image[3] == kRGBColorSpace:
+                    encoding = "rgb8"
+                elif image[3] == kBGRColorSpace:
+                    encoding = "bgr8"
+                elif image[3] == kYUV422ColorSpace:
+                    encoding = "yuv422" # this works only in ROS groovy and later
+                else:
+                    rospy.logerror("Received unknown encoding: {0}".format(image[3]))
+
+                img.encoding = encoding
+                img.step = img.width * nbLayers
+                img.data = image[6]
+                infomsg = self.cim.getCameraInfo()
+                infomsg.header = img.header
+                self.pub_info_.publish(infomsg)
+                self.pub_img_.publish(img)
+                
 if __name__ == "__main__":
     try:
         naocam = NaoCam()
