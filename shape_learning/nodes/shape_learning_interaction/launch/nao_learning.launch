@@ -1,0 +1,20 @@
+<launch>
+<!-- Connect the robot to the map -->
+<node pkg="tf" type="static_transform_publisher" name="map_footprint_broadcaster" args="0 0 0 0 0 0 /base_footprint  /map 100"/>
+
+
+    <!-- Start the learning algorithm -->
+    <node pkg="shape_learning_interaction" type="learning_words_nao.py" name="learning_words_nao">
+        <param name="dataset_directory" type="str" value="$(find shape_learning)/letter_model_datasets" />
+    </node>
+
+    <!-- Start the card detection -->
+    <node pkg="shape_learning_interaction" type="word_card_detector.py" name="word_detector"/>
+
+    <!-- Start the display manager server, which will be accessed by the gesture_manager node and the relevant shape_learning package's node -->
+    <node pkg="shape_learning_interaction" type="display_manager_server.py" name="display_manager_server"/>
+
+    <!-- Start the gesture listener, which will map gestures to the relevant shape -->
+    <node pkg="shape_learning_interaction" type="gesture_manager.py" name="gesture_manager"/>   
+
+</launch>

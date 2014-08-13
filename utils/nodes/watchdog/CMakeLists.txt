@@ -1,15 +1,11 @@
 cmake_minimum_required(VERSION 2.8.3)
-project(display_manager)
+project(watchdog)
 
 ## Find catkin macros and libraries
 ## if COMPONENTS list like find_package(catkin REQUIRED COMPONENTS xyz)
 ## is used, also find other catkin packages
 find_package(catkin REQUIRED COMPONENTS
-  roscpp
-  rospy
   std_msgs
-  geometry_msgs
-  message_generation
 )
 
 ## System dependencies are found with CMake's conventions
@@ -54,16 +50,11 @@ find_package(catkin REQUIRED COMPONENTS
 # )
 
 ## Generate services in the 'srv' folder
-add_service_files(
-   FILES
-   clearAllShapes.srv
-   displayNewShape.srv
-   isPossibleToDisplayNewShape.srv
-   indexOfLocation.srv
-   shapeAtLocation.srv
-   closestShapesToLocation.srv
-   displayShapeAtLocation.srv
-)
+#add_service_files(
+#   FILES
+#   clearAllShapes.srv
+#   displayNewShape.srv
+#)
 
 ## Generate actions in the 'action' folder
 # add_action_files(
@@ -73,11 +64,11 @@ add_service_files(
 # )
 
 ## Generate added messages and services with any dependencies listed here
-generate_messages(
-   DEPENDENCIES
-   std_msgs
-   geometry_msgs
-)
+#generate_messages(
+#   DEPENDENCIES
+#   std_msgs
+#   geometry_msgs
+#)
 
 ###################################
 ## catkin specific configuration ##
@@ -134,7 +125,7 @@ include_directories(
 ## Mark executable scripts (Python etc.) for installation
 ## in contrast to setup.py, you can choose the destination
  install(PROGRAMS
-   src/display_manager_server.py
+   src/watchdog_clearer.py
    DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
  )
 
@@ -146,11 +137,11 @@ include_directories(
 # )
 
 ## Mark cpp header files for installation
-# install(DIRECTORY include/${PROJECT_NAME}/
-#   DESTINATION ${CATKIN_PACKAGE_INCLUDE_DESTINATION}
+install(DIRECTORY include/
+   DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}/python2.7/dist-packages/${PROJECT_NAME}
 #   FILES_MATCHING PATTERN "*.h"
 #   PATTERN ".svn" EXCLUDE
-# )
+ )
 
 ## Mark other files for installation (e.g. launch and bag files, etc.)
 # install(FILES

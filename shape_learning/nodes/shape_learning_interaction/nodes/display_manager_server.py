@@ -1,6 +1,6 @@
 #!/usr/bin/env python
-
-from display_manager.srv import *
+#import roslib; roslib.load_manifest('display_manager')
+from shape_learning_interaction.srv import *
 import rospy
 
 #add path to the shape_display_manager file to include path
@@ -8,7 +8,7 @@ import os, sys
 lib_path = os.path.abspath('../include')
 sys.path.append(lib_path)
 
-from shape_display_manager import ShapeDisplayManager
+from shape_learning_interaction.shape_display_manager import ShapeDisplayManager
 
 def handle_clear_all_shapes(request):
     shapeDisplayManager.clearAllShapes();

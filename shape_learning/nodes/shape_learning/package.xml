@@ -1,0 +1,20 @@
+<?xml version="1.0"?>
+<package>
+  <name>shape_learning</name>
+  <version>0.1.0</version>
+  <description>A package for a learning how to draw shapes (such as letters) from user feedback.</description>
+
+  <maintainer email="deanna.m.good@gmail.com">Deanna Hood</maintainer>
+  <license>MIT</license>
+  <author email="deanna.m.good@gmail.com">Deanna Hood</author> -->
+
+
+  <!-- The *_depend tags are used to specify dependencies -->
+  <buildtool_depend>catkin</buildtool_depend>
+  <build_depend>rospy</build_depend>
+  <build_depend>std_msgs</build_depend>
+  <run_depend>message_runtime</run_depend>
+  <run_depend>rospy</run_depend>
+  <run_depend>std_msgs</run_depend>
+
+</package>
