@@ -32,7 +32,7 @@ drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO
 
 #Nao parameters
 #NAO_IP = '192.168.1.2';
-NAO_IP = '127.0.0.1';#connect to webots simulator locally
+NAO_IP = rospy.get_param('~nao_ip','127.0.0.1'); #default behaviour is to connect to simulator locally
 naoConnected = True;
 naoSpeaking = True;
 naoWriting = True;
