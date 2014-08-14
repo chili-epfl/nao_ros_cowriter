@@ -1,0 +1,11 @@
+<launch>
+    <arg name="nao_handedness" default="right" />
+
+    <!-- Start the message echoer which will listen for a message and request that the Nao traces it -->
+    <node pkg="nao_trajectory_following" type="message_echoer_nao.py" name="message_echoer"/>   
+    
+    <!-- Start the capabilities for the Nao to trace messages on a writing surface -->
+    <include file="$(find nao_trajectory_following)/launch/nao_writing_on_surface.launch" >
+        <arg name="nao_handedness" value="$(arg nao_handedness)" />
+    </include>
+</launch>

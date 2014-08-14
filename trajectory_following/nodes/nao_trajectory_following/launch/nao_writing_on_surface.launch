@@ -1,0 +1,17 @@
+<launch>
+    <arg name="nao_handedness" default="right" />
+    
+    <!-- Start the robot's trajectory responder (which will make the robot move) -->
+    <node pkg="nao_trajectory_following" type="nao_writer_naoqi.py" name="nao_writer">
+        <param name="nao_handedness" type="str" value="$(arg nao_handedness)"/>
+    </node>
+    
+    <!-- Start the writing surface positioner to publish the TF and display it for RViz -->
+    <node pkg="nao_trajectory_following" type="writing_surface_positioner.py" name="writing_surface_positioner">
+        <param name="nao_handedness" type="str" value="$(arg nao_handedness)"/>
+    </node>
+
+    <!-- Start the trajectory visualization for RViz -->
+    <node pkg="nao_trajectory_following" type="trajectory_visualizer.py" name="trajectory_visualizer"/>
+
+</launch>
