@@ -8,12 +8,6 @@ find_package(catkin REQUIRED COMPONENTS
   geometry_msgs
 )
 
-## Uncomment this if the package has a setup.py. This macro ensures
-## modules and global scripts declared therein get installed
-## See http://ros.org/doc/api/catkin/html/user_guide/setup_dot_py.html
-# catkin_python_setup()
-
-
 ###################################
 ## catkin specific configuration ##
 ###################################
@@ -38,27 +32,21 @@ include_directories(
   ${catkin_INCLUDE_DIRS}
 )
 
-
 #############
 ## Install ##
 #############
-
-# all install targets should use catkin DESTINATION variables
-# See http://ros.org/doc/api/catkin/html/adv_user_guide/variables.html
-
-## Mark executable scripts (Python etc.) for installation
-## in contrast to setup.py, you can choose the destination
-# install(PROGRAMS
-#   nodes/learning_letters.py
+## Mark executable scripts for installation
+#install(PROGRAMS
+# nodes/learning_demo.py
 #   DESTINATION ${CATKIN_PACKAGE_BIN_DESTINATION}
 # )
-
-## Mark cpp header files for installation
+ 
+## Mark include directory for installation
 install(DIRECTORY include/
-   DESTINATION ${CATKIN_PACKAGE_LIB_DESTINATION}/python2.7/dist-packages/${PROJECT_NAME}
+   DESTINATION ${CATKIN_PACKAGE_PYTHON_DESTINATION}
  )
 
-## Mark other files for installation (e.g. launch and bag files, etc.)
- install(DIRECTORY letter_model_datasets/
+## Mark datasets for installation
+install(DIRECTORY letter_model_datasets/
    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/letter_model_datasets
  )
