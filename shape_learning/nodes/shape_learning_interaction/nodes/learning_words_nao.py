@@ -2,10 +2,7 @@
 # coding: utf-8
 
 """
-Publishes shapes specified in 'word' argument on the /shapes_to_draw 
-topic and adapts them based on feedback received on the /shape_feedback 
-topic. Feedback messages should be formatted as shapeTypeIndex_bestShapeIndex
-eg. '0_2' for the first letter's 3rd version being the best.
+Nao learning words using the shape_learning package.
 """
 
 
@@ -30,20 +27,56 @@ from shape_learning.state_machine import StateMachine
 from copy import deepcopy
 drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO_CONNECT', 'PUBLISHING_LETTER'];
 
+
+if(naoConnected):
+    import robots
+    from robots import naoqi_request
+    nao = robots.Nao(ros=True, host=NAO_IP);
+else:
+    rospy.init_node("learning_words_nao");
+
+
 #Nao parameters
-#NAO_IP = '192.168.1.2';
 NAO_IP = rospy.get_param('~nao_ip','127.0.0.1'); #default behaviour is to connect to simulator locally
 naoConnected = True;
 naoSpeaking = True;
 naoWriting = True;
-effector   = "RArm" #LArm or RArm
-naoLanguage = "French"; #'English' or 'French'
 
+LANGUAGE = rospy.get_param('~language','english');
+NAO_HANDEDNESS = rospy.get_param('~nao_handedness','right')
+if(NAO_HANDEDNESS.lower()=='right'):
+    effector = "RArm"
+elif(NAO_HANDEDNESS.lower()=='left'):
+    effector = "LArm"
+else: 
+    print('error in handedness param')
+ 
+#shape params       
+FRAME = rospy.get_param('~writing_surface_frame_id','writing_surface') ;  #Frame ID to publish points in
+FEEDBACK_TOPIC = rospy.get_param('~shape_feedback_topic','shape_feedback'); #Name of topic to receive feedback on
+SHAPE_TOPIC = rospy.get_param('~trajectory_output_topic','/write_traj'); #Name of topic to publish shapes to
+SHAPE_TOPIC_DOWNSAMPLED = rospy.get_param('~trajectory_output_nao_topic','/write_traj_downsampled');  #Name of topic to publish shapes to
+
+#tablet params        
+CLEAR_SURFACE_TOPIC = rospy.get_param('~clear_surface_topic','clear_screen');
+SHAPE_FINISHED_TOPIC = 'shape_finished';
+USER_DRAWN_SHAPES_TOPIC = 'user_shapes';
+GESTURE_TOPIC = rospy.get_param('~gesture_info_topic','gesture_info');
+
+#interaction params
+WORDS_TOPIC = rospy.get_param('~words_to_write_topic','words_to_write');
+TEST_TOPIC = rospy.get_param('~test_request_topic','test_learning');#Listen for when test card has been shown to the robot
+STOP_TOPIC = rospy.get_param('~stop_request_topic','stop_learning');#Listen for when stop card has been shown to the robot
+NEW_CHILD_TOPIC = 'new_child';
+
+PUBLISH_STATUS_TOPIC = 'camera_publishing_status';
+        
+        
 alternateSidesLookingAt = False; #if true, nao will look to a different side each time. 
 global nextSideToLookAt
 nextSideToLookAt = 'Right';
 
-if(naoLanguage=='English'):
+if(LANGUAGE=='English'):
     introPhrase = "Hello. I'm Nao. Please show me a word to practice.";
     demo_responses = ["Okay, I'll try it like you", "So that's how you write %s", "That's a much better %s than mine", "I'll try to copy you","Let me try now","Thank you"];
     asking_phrases_after_feedback = ["Any better?", "How about now?", "Now what do you think?","Is there a difference?", "Is this one okay?", "Will you show me how?", "Did I improve?"];
@@ -52,7 +85,7 @@ if(naoLanguage=='English'):
     word_responses_again = ["%s again, okay.", "I thought I already did %s", "You like to practice this word"];
     testPhrase = "Ok, test time. I'll try my best.";
     thankYouPhrase = 'Thank you for your help.';
-elif(naoLanguage=='French'):
+elif(LANGUAGE=='French'):
     introPhrase = "Bonjour, je m'appelle Nao. Peux-tu me montrer un mot ?";
     demo_responses = ["D'accord, j'essaye comme ça", "Ah, c'est comme ça qu'on écrit %s", "Ce %s est pas mal", "Bon, j'essaye comme toi", "Ok, à moi", "À mon tour", "Merci, je vais essayer"];
     asking_phrases_after_feedback = ["C'est mieux ?", "Et comme ça ?", "Tu en penses quoi ?", "Qu'est-ce que tu en penses ?", "Il y a une différence ?", "Ça va cette fois ?", "Je me suis amélioré ?", "Tu trouves que c'est mieux ?"];
@@ -91,10 +124,6 @@ learningModes = {'c': LearningModes.startsRandom,
 
 
 #trajectory publishing parameters
-FRAME = 'writing_surface';  #Frame ID to publish points in
-FEEDBACK_TOPIC = 'shape_feedback'; #Name of topic to receive feedback on
-SHAPE_TOPIC = 'write_traj'; #Name of topic to publish shapes to
-SHAPE_TOPIC_DOWNSAMPLED = 'write_traj_downsampled'; #Name of topic to publish shapes to
 if(naoWriting):
     t0 = 3;                 #Time allowed for the first point in traj (seconds)
     dt = 0.25               #Seconds between points in traj
@@ -116,33 +145,14 @@ numPoints_shapeModeler = 70; #Number of points used by ShapeModelers
 tabletConnected = True;      #If true, will wait for shape_finished notification before proceeding to the next shape (rather than a fixed delay)
 minTimeBetweenTouches = 0.1  #Seconds allowed between touches for the second one to be considered
 
-CLEAR_SCREEN_TOPIC = 'clear_screen';
-SHAPE_FINISHED_TOPIC = 'shape_finished';
-USER_DRAWN_SHAPES_TOPIC = 'user_shapes';
-GESTURE_TOPIC = 'gesture_info';
-
-WORDS_TOPIC = 'words_to_write';
-TEST_TOPIC = 'test_learning';#Listen for when test card has been shown to the robot
-STOP_TOPIC = 'stop_learning';#Listen for when stop card has been shown to the robot
-NEW_CHILD_TOPIC = 'new_child';
-
-PUBLISH_STATUS_TOPIC = 'camera_publishing_status';
 from std_msgs.msg import Bool
 pub_camera_status = rospy.Publisher(PUBLISH_STATUS_TOPIC,Bool);
 
 pub_traj = rospy.Publisher(SHAPE_TOPIC, Path);
 pub_traj_downsampled = rospy.Publisher(SHAPE_TOPIC_DOWNSAMPLED, Path);
-pub_clear = rospy.Publisher(CLEAR_SCREEN_TOPIC, Empty);
+pub_clear = rospy.Publisher(CLEAR_SURFACE_TOPIC, Empty);
 
 wordReceived = None;
-if(naoConnected):
-    import robots
-    from robots import naoqi_request
-    nao = robots.Nao(ros=True, host=NAO_IP);
-else:
-    rospy.init_node("learning_words_nao");
-
-    
 strokes=[];
 def userShapePreprocessor(message):
     global strokes
@@ -1070,7 +1080,7 @@ if __name__ == "__main__":
     words_subscriber = rospy.Subscriber(WORDS_TOPIC, String, onWordReceived);
     
     #listen for request to clear screen (from tablet)
-    clear_subscriber = rospy.Subscriber(CLEAR_SCREEN_TOPIC, Empty, onClearScreenReceived);
+    clear_subscriber = rospy.Subscriber(CLEAR_SURFACE_TOPIC, Empty, onClearScreenReceived);
     
     #listen for test time
     test_subscriber = rospy.Subscriber(TEST_TOPIC, Empty, onTestRequestReceived);
@@ -1103,7 +1113,7 @@ if __name__ == "__main__":
             NAO_IP,      # parent broker IP
             port)        # parent broker port
         textToSpeech = ALProxy("ALTextToSpeech", NAO_IP, port)   
-        textToSpeech.setLanguage(naoLanguage)
+        textToSpeech.setLanguage(LANGUAGE)
         #textToSpeech.setVolume(1.0);
         if(naoWriting):
             nao.setpose("StandInit");

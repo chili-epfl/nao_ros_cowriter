@@ -15,8 +15,6 @@ import tf
 from copy import deepcopy
 from naoqi import ALProxy
 
-TRAJ_TOPIC = "/write_traj_downsampled"
-
 # masks for which axes naoqi is to control with its planning
 AXIS_MASK_X = 1
 AXIS_MASK_Y = 2
@@ -24,10 +22,6 @@ AXIS_MASK_Z = 4
 AXIS_MASK_WX = 8
 AXIS_MASK_WY = 16
 AXIS_MASK_WZ = 32
-
-effector   = "RArm" #LArm or RArm
-#NAO_IP = '192.168.1.2';
-NAO_IP = '127.0.0.1';#connect to webots simulator locally
 
 def on_traj(traj):
     print("got traj at "+str(rospy.Time.now())) 
@@ -100,6 +94,19 @@ class FallResponder(ALModule):
       
 if __name__ == "__main__":
     rospy.init_node("nao_writer");
+    
+    TRAJ_TOPIC = rospy.get_param('~trajectory_input_topic','/write_traj_downsampled')    
+    NAO_IP = rospy.get_param('~nao_ip','127.0.0.1'); #default behaviour is 
+                                        #to connect to simulator locally
+    NAO_HANDEDNESS = rospy.get_param('~nao_handedness','right')
+    if(NAO_HANDEDNESS.lower()=='right'):
+        effector   = "RArm"
+    elif(NAO_HANDEDNESS.lower()=='left'):
+        effector = "LArm"
+    else: 
+        print('error in handedness param')
+
+
 
     # We need this broker to be able to construct
     # NAOqi modules and subscribe to other modules

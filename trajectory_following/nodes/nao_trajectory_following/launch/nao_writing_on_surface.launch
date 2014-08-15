@@ -3,7 +3,7 @@
     <arg name="nao_ip" default="127.0.0.1" />
 
     <!-- Topic to receive trajectories for nao to write on -->
-    <arg name="trajectory_nao_input_topic" default="write_traj_subsampled" />
+    <arg name="trajectory_nao_input_topic" default="write_traj_downsampled" />
       
     <!-- Topic to receive trajectories to display on -->
     <arg name="trajectory_visualization_input_topic" default="write_traj" /> 
@@ -47,6 +47,8 @@
     <!-- Start the robot's trajectory responder (which will make the robot move) -->
     <node pkg="nao_trajectory_following" type="nao_writer_naoqi.py" name="nao_writer">
         <param name="nao_handedness" type="str" value="$(arg nao_handedness)"/>
+        <param name="trajectory_input_topic" type="str" value="$(arg trajectory_nao_input_topic)"/>
+        <param name="nao_ip" type="str" value="$(arg nao_ip)"/>
     </node>
     
     <!-- Start the writing surface positioner to publish the TF and display it for RViz -->

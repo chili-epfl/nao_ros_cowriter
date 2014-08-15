@@ -11,14 +11,6 @@ from geometry_msgs.msg import PointStamped
 
 minTimeBetweenTouches = 0.1  #Seconds allowed between touches for the second one to be considered
 
-TOUCH_TOPIC = 'touch_info';         #Topic for location of 'new shape like this one' gesture
-GESTURE_TOPIC = 'long_touch_info';  #Topic for location of 'shape good enough' gesture
-FEEDBACK_TOPIC = 'shape_feedback';  #Name of topic to publish feedback on
-
-pub_feedback = rospy.Publisher(FEEDBACK_TOPIC, String);
-
-rospy.init_node("gesture_listener");
-
 def listenForAllGestures():
     global touch_subscriber, gesture_subscriber;
     #listen for touch events on the tablet
@@ -133,10 +125,22 @@ def gestureManager(pointStamped):
 
 
 if __name__ == "__main__":
+
+    rospy.init_node("gesture_listener");
+    #Topic for location of 'new shape like this one' gesture
+    TOUCH_TOPIC = rospy.get_param('~touch_info_topic','touch_info');         
+    #Topic for location of 'shape good enough' gesture
+    GESTURE_TOPIC = rospy.get_param('~gesture_info_topic','gesture_info');  
+    #Name of topic to publish feedback on
+    FEEDBACK_TOPIC = rospy.get_param('~shape_feedback_topic','shape_feedback');  
+
+    pub_feedback = rospy.Publisher(FEEDBACK_TOPIC, String);
+
     listenForAllGestures();
     
     #initialise display manager for shapes (manages positioning of shapes)
     from shape_learning_interaction.srv import *
-    rospy.wait_for_service('clear_all_shapes'); #SHOULD WE WAIT FOR ALL SERVICES..?
+    rospy.wait_for_service('shape_at_location'); 
+    rospy.wait_for_service('possible_to_display_shape'); 
 
     rospy.spin();
