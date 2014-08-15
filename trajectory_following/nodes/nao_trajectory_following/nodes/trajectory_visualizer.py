@@ -2,10 +2,8 @@
 
 """
 Listens on a topic for a trajectory message, and publishes the corresponding 
-trajectory with markers on the 'visualization_markers' topic, as an animation.
+trajectory with markers as an animation suitable for RViz.
 
-Trajectory coordinates are published in the 'writing_surface' frame. You may want to first
-broadcast it.
 """
 
 import logging
@@ -23,21 +21,12 @@ from visualization_msgs.msg import Marker
 from nav_msgs.msg import Path
 from std_msgs.msg import Empty
 
-CLEAR_TOPIC = 'clear_screen';
-SHAPE_TOPIC = 'write_traj';
-MARKER_TOPIC = 'visualization_markers';
-
-FRAME = "writing_surface"
-WRITE_MULTIPLE_SHAPES = True; #if True, modify the marker ID so as to not 
-                            #overwrite the previous shape(s)
 
 potentialShapesMissed = 20; #perhaps a clear request is received for shapes 
                             #displayed before the node started, so shapeCount 
                             #won't be accurate. This is the number of 
                             #(potential) shapes to delete in such a case.
 
-
-pub_markers = rospy.Publisher(MARKER_TOPIC, Marker);
 
 def visualize_traj(points):
 
@@ -106,10 +95,20 @@ def on_clear(message):
 if __name__=="__main__":
     rospy.init_node("trajectory_visualizer");
     
+    CLEAR_TOPIC = rospy.get_param('~clear_surface_topic','clear_screen')
+    SHAPE_TOPIC = rospy.get_param('~trajectory_input_topic','write_traj')
+    MARKER_TOPIC = rospy.get_param('~visualization_output_topic','visualization_markers')
+    FRAME = rospy.get_param('~writing_surface_frame_id','writing_surface') 
+
+    WRITE_MULTIPLE_SHAPES = True; #if True, modify the marker ID so as to not 
+                                    #overwrite the previous shape(s)
+    
+    pub_markers = rospy.Publisher(MARKER_TOPIC, Marker);
+    
     shapeCount = 0;
     #when we get a trajectory, start publishing the animation
     traj_subscriber = rospy.Subscriber(SHAPE_TOPIC, Path, on_traj);
+    #when we get a clear request, delete previously drawn shapes
     clear_subscriber = rospy.Subscriber(CLEAR_TOPIC, Empty, on_clear);
-    
     
     rospy.spin()

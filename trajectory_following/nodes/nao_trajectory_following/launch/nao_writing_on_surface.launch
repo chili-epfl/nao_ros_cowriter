@@ -1,8 +1,20 @@
 <launch>
     <arg name="nao_handedness" default="right" />
     <arg name="nao_ip" default="127.0.0.1" />
+
+    <!-- Topic to receive trajectories for nao to write on -->
+    <arg name="trajectory_nao_input_topic" default="write_traj_subsampled" />
       
-    <!-- Name of frame to publish as writing surface origin (at bottom left of surface, with x to the left and y up) -->
+    <!-- Topic to receive trajectories to display on -->
+    <arg name="trajectory_visualization_input_topic" default="write_traj" /> 
+    
+    <!-- Topic to publish trajectory display markers on -->
+    <arg name="trajectory_visualization_output_topic" default="visualization_markers" /> 
+
+    <!-- Topic to receive clear writing surface requests on -->
+    <arg name="clear_writing_surface_topic" default="clear_screen" /> 
+      
+    <!-- Name of frame representing writing surface origin (at bottom left of surface, with x to the left and y up) -->
     <arg name="writing_surface_frame_id" default="writing_surface" /> 
     
     <!-- Method for positioning the writing surface. 'interactive_marker' for manual positioning in RViz, 'fiducial_marker_detection' for detecting a fiducial marker at the bottom left of the surface (tested with chilitags) -->
@@ -17,7 +29,13 @@
     <!-- Size of rectangular marker to be displayed (default values for the galaxy note 10.1 in landscape orientation, use (0.21,0.297) for A4 paper in portrait orientation) -->
     <arg name="writing_surface_width_m" default="0.217" /> 
     <arg name="writing_surface_height_m" default="0.136" />
-    
+        
+        
+        
+    <!-- ##### END ARGUMENTS ##### -->    
+        
+    <!-- Start RViz for display purposes -->
+    <node pkg="rviz" type="rviz" name="rviz" args="--display-config=$(find nao_trajectory_following)/config/nao_writing_rviz_config.rviz" />
     
     <!-- Start the nao-related ROS nodes -->
     <include file="$(find nao_description)/launch/nao_v4_publisher.launch" />
@@ -42,6 +60,10 @@
     </node>
 
     <!-- Start the trajectory visualization for RViz -->
-    <node pkg="nao_trajectory_following" type="trajectory_visualizer.py" name="trajectory_visualizer"/>
-
+    <node pkg="nao_trajectory_following" type="trajectory_visualizer.py" name="trajectory_visualizer">
+        <param name="writing_surface_frame_id" type="str" value="$(arg writing_surface_frame_id)"/>
+        <param name="trajectory_input_topic" type="str" value="$(arg trajectory_visualization_input_topic)"/>
+        <param name="visualization_output_topic" type="str" value="$(arg trajectory_visualization_output_topic)"/>
+        <param name="clear_surface_topic" type="str" value="$(arg clear_writing_surface_topic)"/>
+    </node>
 </launch>

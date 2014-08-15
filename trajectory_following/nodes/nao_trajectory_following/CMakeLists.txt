@@ -59,4 +59,8 @@ include_directories(
    launch/nao_writing_on_surface.launch
    DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/launch
  )
+  install(FILES
+   config/nao_writing_rviz_config.rviz
+   DESTINATION ${CATKIN_PACKAGE_SHARE_DESTINATION}/config
+ )
 
