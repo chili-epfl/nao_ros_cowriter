@@ -15,28 +15,7 @@ tf_broadcaster = tf.TransformBroadcaster()
 
 from interactive_markers.interactive_marker_server import *
 
-TAG_FRAME = "tag_1" #name of frame to detect tablet with (chilitag frame, with y horizontal and x vertical)
-FRAME_ID = "writing_surface" #name of frame to publish as tablet (with x horizontal and y vertical)
-METHOD = "manual_positioning";
-
-SURFACE_WIDTH = 0.217 #values for the galaxy note 10.1 in landscape
-SURFACE_HEIGHT = 0.136
-#SURFACE_WIDTH = 0.21 #values for an A4 piece of paper in portrait
-#SURFACE_HEIGHT = 0.297
 server = None
-
-#assign default values
-frame_pose = Pose()
-#use values from 'rosrun tf tf_echo map writing_surface' with intereactive 
-#marker in desired position
-frame_pose.orientation.x = -0.4
-frame_pose.orientation.y = 0.5
-frame_pose.orientation.z = 0.6
-frame_pose.orientation.w = -0.5
-frame_pose.position.x = 0.225
-frame_pose.position.y = -0.032
-frame_pose.position.z = 0.287
-
 def processFeedback(feedback):
     global frame_pose
     p = feedback.pose.position
@@ -172,13 +151,33 @@ def make6DofMarker( fixed = False ):
 
 if __name__=="__main__":
     rospy.init_node("writing_surface_positioner")
+        
+    #method used for positioning the writing surface frame
+    POSITIONING_METHOD = rospy.get_param('~positioning_method',
+                                            'interactive_marker')
     
-    if(METHOD == "automatic_positioning"):
+    #name of frame to publish as writing surface origin (at bottom left, with 
+    #x horizontal and y vertical)
+    FRAME_ID = rospy.get_param('~writing_surface_frame_id','writing_surface') 
+
+    #size of marker to be displayed (default values for the galaxy note 10.1 
+    #in landscape orientation
+    SURFACE_WIDTH = rospy.get_param('~surface_width',0.217) 
+    SURFACE_HEIGHT = rospy.get_param('~surface_height',0.136)
+        
+    
+    if(POSITIONING_METHOD.lower() == "fiducial_marker_detection"):
+        TAG_FRAME = rospy.get_param('~tag_frame_id','tag_1') #name of frame to 
+                                                #detect writing surface with 
+        ROTATE_TAG_FRAME = rospy.get_param('~rotate_tag_frame',True) #chilitag 
+        #frame has y horizontal and x vertical (graphics coordinate system) and
+        #needs to be changed to 'robotics' coordinate system
+        
         tf_listener = tf.TransformListener(True, rospy.Duration(10))
         rospy.sleep(.5)
         rate = rospy.Rate(50)
         while not rospy.is_shutdown():
-        #tf_broadcaster.sendTransform((0,0,0),(0,0,0,1),rospy.Time.now(),"v4l_frame","gaze") #manually "attach" the webcam to the robot's frame
+        #tf_broadcaster.sendTransform((0,0,0),(0,0,0,1),rospy.Time.now(),"v4l_frame","gaze") #manually "attach" the webcam to the robot's frame (for testing)
             try:
                 tf_listener.waitForTransform("map", TAG_FRAME, rospy.Time.now(), rospy.Duration(5.0))
                 t = tf_listener.getLatestCommonTime("map", TAG_FRAME)
@@ -189,7 +188,10 @@ if __name__=="__main__":
             #rotate coordinate system of tag to match the desired one for the tablet
             surfacePose = PoseStamped()
             surfacePose.header.frame_id = TAG_FRAME
-            orientation = tf.transformations.quaternion_from_euler(3.14159,0,3.14159/2) #convert 'x up, y to the right' of chilitag from to 'y up, x to the right' for the writing surface
+            
+            if(ROTATE_TAG_FRAME):
+                #convert 'x up, y to the right' of chilitag from to 'y up, x to the right' for the writing surface
+                orientation = tf.transformations.quaternion_from_euler(3.14159,0,3.14159/2)
 
             surfacePose.pose.orientation.x=orientation[0]
             surfacePose.pose.orientation.y=orientation[1]
@@ -203,7 +205,32 @@ if __name__=="__main__":
 
         rate.sleep()
     
-    elif(METHOD == "manual_positioning"):
+    elif(POSITIONING_METHOD.lower() == "interactive_marker"):
+        NAO_HANDEDNESS = rospy.get_param('~nao_handedness','right')
+        
+        #assign default values of pose
+        frame_pose = Pose()
+        #use values from 'rosrun tf tf_echo map writing_surface' with  
+        #interactive marker in desired position
+        if(NAO_HANDEDNESS.lower() == 'right'):
+            frame_pose.orientation.x = -0.4
+            frame_pose.orientation.y = 0.5
+            frame_pose.orientation.z = 0.6
+            frame_pose.orientation.w = -0.5
+            frame_pose.position.x = 0.225
+            frame_pose.position.y = -0.032
+            frame_pose.position.z = 0.27
+        elif(NAO_HANDEDNESS.lower() == 'left'):
+            frame_pose.orientation.x = 0.4
+            frame_pose.orientation.y = -0.4
+            frame_pose.orientation.z = -0.5
+            frame_pose.orientation.w = 0.6
+            frame_pose.position.x = 0.16
+            frame_pose.position.y = 0.032+SURFACE_WIDTH
+            frame_pose.position.z = 0.27
+        else:
+            print('error in handedness input')
+        
         server = InteractiveMarkerServer("writing_surface_placer")
 
         make6DofMarker(fixed = True)

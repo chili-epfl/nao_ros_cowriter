@@ -1,5 +1,30 @@
 <launch>
     <arg name="nao_handedness" default="right" />
+    <arg name="nao_ip" default="127.0.0.1" />
+      
+    <!-- Name of frame to publish as writing surface origin (at bottom left of surface, with x to the left and y up) -->
+    <arg name="writing_surface_frame_id" default="writing_surface" /> 
+    
+    <!-- Method for positioning the writing surface. 'interactive_marker' for manual positioning in RViz, 'fiducial_marker_detection' for detecting a fiducial marker at the bottom left of the surface (tested with chilitags) -->
+    <arg name="writing_surface_positioning_method" default="interactive_marker" />
+    
+    <!-- Name of frame of fiducial marker if used as positioning mode -->
+    <arg name="fiducial_marker_frame_id" default="tag_1" />
+    
+    <!-- If chilitags is used as the fiducial marker detection scheme, the coordinate system of the detected tag has x up, y to the right. In future versions this may change, but for now it's necessary to rotate the frame, so the default is 'true.' If 'false' and no other processing is necessary, probably the frame can just be re-mapped and this node is unnecessary. -->
+    <arg name="rotate_detected_tag_frame" default="true" />
+    
+    <!-- Size of rectangular marker to be displayed (default values for the galaxy note 10.1 in landscape orientation, use (0.21,0.297) for A4 paper in portrait orientation) -->
+    <arg name="writing_surface_width_m" default="0.217" /> 
+    <arg name="writing_surface_height_m" default="0.136" />
+    
+    
+    <!-- Start the nao-related ROS nodes -->
+    <include file="$(find nao_description)/launch/nao_v4_publisher.launch" />
+    <node pkg="nao_driver" type="nao_sensors.py" name="nao_sensors" required="true" args="--pip=$(arg nao_ip) --pport=9559" />
+
+    <!-- Connect the robot to the map -->
+    <node pkg="tf" type="static_transform_publisher" name="map_footprint_broadcaster" args="0 0 0 0 0 0 /base_footprint /map 10"/>
     
     <!-- Start the robot's trajectory responder (which will make the robot move) -->
     <node pkg="nao_trajectory_following" type="nao_writer_naoqi.py" name="nao_writer">
@@ -9,6 +34,11 @@
     <!-- Start the writing surface positioner to publish the TF and display it for RViz -->
     <node pkg="nao_trajectory_following" type="writing_surface_positioner.py" name="writing_surface_positioner">
         <param name="nao_handedness" type="str" value="$(arg nao_handedness)"/>
+        <param name="positioning_method" type="str" value="$(arg writing_surface_positioning_method)"/>
+        <param name="writing_surface_frame_id" type="str" value="$(arg writing_surface_frame_id)"/>
+        <param name="tag_frame_id" type="str" value="$(arg fiducial_marker_frame_id)"/>
+        <param name="surface_width" type="double" value="$(arg writing_surface_width_m)"/>
+        <param name="surface_height" type="double" value="$(arg writing_surface_height_m)"/>
     </node>
 
     <!-- Start the trajectory visualization for RViz -->
