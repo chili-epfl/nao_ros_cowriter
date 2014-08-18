@@ -28,13 +28,6 @@ from copy import deepcopy
 drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO_CONNECT', 'PUBLISHING_LETTER'];
 
 
-if(naoConnected):
-    import robots
-    from robots import naoqi_request
-    nao = robots.Nao(ros=True, host=NAO_IP);
-else:
-    rospy.init_node("learning_words_nao");
-
 
 #Nao parameters
 NAO_IP = rospy.get_param('~nao_ip','127.0.0.1'); #default behaviour is to connect to simulator locally
@@ -42,8 +35,16 @@ naoConnected = True;
 naoSpeaking = True;
 naoWriting = True;
 
-LANGUAGE = rospy.get_param('~language','english');
-NAO_HANDEDNESS = rospy.get_param('~nao_handedness','right')
+#How to deal with this cyclical dependency on rosparam/init_node? (Get rid of pyrobots anyway probably)
+if(naoConnected):
+    import robots
+    from robots import naoqi_request
+    nao = robots.Nao(ros=True, host=NAO_IP);
+else:
+    rospy.init_node("learning_words_nao");
+
+LANGUAGE = rospy.get_param('~language')#,'english');
+NAO_HANDEDNESS = rospy.get_param('~nao_handedness')#,'right')
 if(NAO_HANDEDNESS.lower()=='right'):
     effector = "RArm"
 elif(NAO_HANDEDNESS.lower()=='left'):
@@ -52,31 +53,31 @@ else:
     print('error in handedness param')
  
 #shape params       
-FRAME = rospy.get_param('~writing_surface_frame_id','writing_surface') ;  #Frame ID to publish points in
-FEEDBACK_TOPIC = rospy.get_param('~shape_feedback_topic','shape_feedback'); #Name of topic to receive feedback on
-SHAPE_TOPIC = rospy.get_param('~trajectory_output_topic','/write_traj'); #Name of topic to publish shapes to
-SHAPE_TOPIC_DOWNSAMPLED = rospy.get_param('~trajectory_output_nao_topic','/write_traj_downsampled');  #Name of topic to publish shapes to
+FRAME = rospy.get_param('~writing_surface_frame_id')#,'writing_surface') ;  #Frame ID to publish points in
+FEEDBACK_TOPIC = rospy.get_param('~shape_feedback_topic')#,'shape_feedback'); #Name of topic to receive feedback on
+SHAPE_TOPIC = rospy.get_param('~trajectory_output_topic')#,'/write_traj'); #Name of topic to publish shapes to
+SHAPE_TOPIC_DOWNSAMPLED = rospy.get_param('~trajectory_output_nao_topic')#,'/write_traj_downsampled');  #Name of topic to publish shapes to
 
 #tablet params        
-CLEAR_SURFACE_TOPIC = rospy.get_param('~clear_surface_topic','clear_screen');
-SHAPE_FINISHED_TOPIC = 'shape_finished';
-USER_DRAWN_SHAPES_TOPIC = 'user_shapes';
-GESTURE_TOPIC = rospy.get_param('~gesture_info_topic','gesture_info');
+CLEAR_SURFACE_TOPIC = rospy.get_param('~clear_writing_surface_topic')#,'clear_screen');
+SHAPE_FINISHED_TOPIC = rospy.get_param('~shape_writing_finished_topic')#,'shape_finished');
+USER_DRAWN_SHAPES_TOPIC = rospy.get_param('~user_drawn_shapes_topic')#,'user_drawn_shapes');
+GESTURE_TOPIC = rospy.get_param('~gesture_info_topic')#,'gesture_info');
 
 #interaction params
-WORDS_TOPIC = rospy.get_param('~words_to_write_topic','words_to_write');
-TEST_TOPIC = rospy.get_param('~test_request_topic','test_learning');#Listen for when test card has been shown to the robot
-STOP_TOPIC = rospy.get_param('~stop_request_topic','stop_learning');#Listen for when stop card has been shown to the robot
-NEW_CHILD_TOPIC = 'new_child';
+WORDS_TOPIC = rospy.get_param('~words_to_write_topic')#,'words_to_write');
+TEST_TOPIC = rospy.get_param('~test_request_topic')#,'test_learning');#Listen for when test card has been shown to the robot
+STOP_TOPIC = rospy.get_param('~stop_request_topic')#,'stop_learning');#Listen for when stop card has been shown to the robot
+NEW_CHILD_TOPIC = rospy.get_param('~new_teacher_topic')#,'new_child');#Welcome a new teacher but don't reset learning algorithm's 'memory'
 
-PUBLISH_STATUS_TOPIC = 'camera_publishing_status';
+PUBLISH_STATUS_TOPIC = rospy.get_param('~camera_publishing_status_topic')#,'camera_publishing_status'); #Controls the camera based on the interaction state (turn it off for writing b/c CPU gets maxed)
         
         
 alternateSidesLookingAt = False; #if true, nao will look to a different side each time. 
 global nextSideToLookAt
 nextSideToLookAt = 'Right';
 
-if(LANGUAGE=='English'):
+if(LANGUAGE.lower()=='english'):
     introPhrase = "Hello. I'm Nao. Please show me a word to practice.";
     demo_responses = ["Okay, I'll try it like you", "So that's how you write %s", "That's a much better %s than mine", "I'll try to copy you","Let me try now","Thank you"];
     asking_phrases_after_feedback = ["Any better?", "How about now?", "Now what do you think?","Is there a difference?", "Is this one okay?", "Will you show me how?", "Did I improve?"];
@@ -85,7 +86,7 @@ if(LANGUAGE=='English'):
     word_responses_again = ["%s again, okay.", "I thought I already did %s", "You like to practice this word"];
     testPhrase = "Ok, test time. I'll try my best.";
     thankYouPhrase = 'Thank you for your help.';
-elif(LANGUAGE=='French'):
+elif(LANGUAGE.lower()=='french'):
     introPhrase = "Bonjour, je m'appelle Nao. Peux-tu me montrer un mot ?";
     demo_responses = ["D'accord, j'essaye comme ça", "Ah, c'est comme ça qu'on écrit %s", "Ce %s est pas mal", "Bon, j'essaye comme toi", "Ok, à moi", "À mon tour", "Merci, je vais essayer"];
     asking_phrases_after_feedback = ["C'est mieux ?", "Et comme ça ?", "Tu en penses quoi ?", "Qu'est-ce que tu en penses ?", "Il y a une différence ?", "Ça va cette fois ?", "Je me suis amélioré ?", "Tu trouves que c'est mieux ?"];
