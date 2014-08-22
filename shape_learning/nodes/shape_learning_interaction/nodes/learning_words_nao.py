@@ -31,9 +31,9 @@ drawingLetterSubstates = ['WAITING_FOR_ROBOT_TO_CONNECT', 'WAITING_FOR_TABLET_TO
 
 #Nao parameters
 NAO_IP = rospy.get_param('~nao_ip','127.0.0.1'); #default behaviour is to connect to simulator locally
-naoConnected = True;
-naoSpeaking = True;
-naoWriting = True;
+naoConnected = False;
+naoSpeaking = False;
+naoWriting = False;
 
 #How to deal with this cyclical dependency on rosparam/init_node? (Get rid of pyrobots anyway probably)
 if(naoConnected):
@@ -43,8 +43,8 @@ if(naoConnected):
 else:
     rospy.init_node("learning_words_nao");
 
-LANGUAGE = rospy.get_param('~language')#,'english');
-NAO_HANDEDNESS = rospy.get_param('~nao_handedness')#,'right')
+LANGUAGE = rospy.get_param('~language','english');
+NAO_HANDEDNESS = rospy.get_param('~nao_handedness','right')
 if(NAO_HANDEDNESS.lower()=='right'):
     effector = "RArm"
 elif(NAO_HANDEDNESS.lower()=='left'):
@@ -53,24 +53,24 @@ else:
     print('error in handedness param')
  
 #shape params       
-FRAME = rospy.get_param('~writing_surface_frame_id')#,'writing_surface') ;  #Frame ID to publish points in
-FEEDBACK_TOPIC = rospy.get_param('~shape_feedback_topic')#,'shape_feedback'); #Name of topic to receive feedback on
-SHAPE_TOPIC = rospy.get_param('~trajectory_output_topic')#,'/write_traj'); #Name of topic to publish shapes to
-SHAPE_TOPIC_DOWNSAMPLED = rospy.get_param('~trajectory_output_nao_topic')#,'/write_traj_downsampled');  #Name of topic to publish shapes to
+FRAME = rospy.get_param('~writing_surface_frame_id','writing_surface') ;  #Frame ID to publish points in
+FEEDBACK_TOPIC = rospy.get_param('~shape_feedback_topic','shape_feedback'); #Name of topic to receive feedback on
+SHAPE_TOPIC = rospy.get_param('~trajectory_output_topic','/write_traj'); #Name of topic to publish shapes to
+SHAPE_TOPIC_DOWNSAMPLED = rospy.get_param('~trajectory_output_nao_topic','/write_traj_downsampled');  #Name of topic to publish shapes to
 
 #tablet params        
-CLEAR_SURFACE_TOPIC = rospy.get_param('~clear_writing_surface_topic')#,'clear_screen');
-SHAPE_FINISHED_TOPIC = rospy.get_param('~shape_writing_finished_topic')#,'shape_finished');
-USER_DRAWN_SHAPES_TOPIC = rospy.get_param('~user_drawn_shapes_topic')#,'user_drawn_shapes');
-GESTURE_TOPIC = rospy.get_param('~gesture_info_topic')#,'gesture_info');
+CLEAR_SURFACE_TOPIC = rospy.get_param('~clear_writing_surface_topic','clear_screen');
+SHAPE_FINISHED_TOPIC = rospy.get_param('~shape_writing_finished_topic','shape_finished');
+USER_DRAWN_SHAPES_TOPIC = rospy.get_param('~user_drawn_shapes_topic','user_shapes');
+GESTURE_TOPIC = rospy.get_param('~gesture_info_topic','gesture_info');
 
 #interaction params
-WORDS_TOPIC = rospy.get_param('~words_to_write_topic')#,'words_to_write');
-TEST_TOPIC = rospy.get_param('~test_request_topic')#,'test_learning');#Listen for when test card has been shown to the robot
-STOP_TOPIC = rospy.get_param('~stop_request_topic')#,'stop_learning');#Listen for when stop card has been shown to the robot
-NEW_CHILD_TOPIC = rospy.get_param('~new_teacher_topic')#,'new_child');#Welcome a new teacher but don't reset learning algorithm's 'memory'
+WORDS_TOPIC = rospy.get_param('~words_to_write_topic','words_to_write');
+TEST_TOPIC = rospy.get_param('~test_request_topic','test_learning');#Listen for when test card has been shown to the robot
+STOP_TOPIC = rospy.get_param('~stop_request_topic','stop_learning');#Listen for when stop card has been shown to the robot
+NEW_CHILD_TOPIC = rospy.get_param('~new_teacher_topic','new_child');#Welcome a new teacher but don't reset learning algorithm's 'memory'
 
-PUBLISH_STATUS_TOPIC = rospy.get_param('~camera_publishing_status_topic')#,'camera_publishing_status'); #Controls the camera based on the interaction state (turn it off for writing b/c CPU gets maxed)
+PUBLISH_STATUS_TOPIC = rospy.get_param('~camera_publishing_status_topic','camera_publishing_status'); #Controls the camera based on the interaction state (turn it off for writing b/c CPU gets maxed)
         
         
 alternateSidesLookingAt = False; #if true, nao will look to a different side each time. 
@@ -1012,7 +1012,7 @@ def waitForRobotToConnect(infoFromPrevState):
     nextState = "WAITING_FOR_ROBOT_TO_CONNECT";
     infoForNextState = {'state_cameFrom': "WAITING_FOR_ROBOT_TO_CONNECT"};
     
-    if(robotWatchdog.isResponsive()):
+    if(robotWatchdog.isResponsive() or not naoConnected):
         infoForNextState = infoToRestore_waitForRobotToConnect;
         try:
             nextState = infoForNextState['state_goTo'].pop(0);
@@ -1052,8 +1052,12 @@ settings_shapeLearners = [];
 shapeFinished = False;
 if __name__ == "__main__":
 
-    datasetDirectory = rospy.get_param('~dataset_directory', '/home/chili-democorner/CoWriter/install_prefix/share/shape_learning/letter_model_datasets');
-
+    datasetDirectory = rospy.get_param('~dataset_directory','default');
+    if(datasetDirectory.lower()=='default'): #use default
+        import inspect
+        fileName = inspect.getsourcefile(ShapeModeler);
+        installDirectory = fileName.split('/lib')[0];
+        datasetDirectory = installDirectory + '/share/shape_learning/letter_model_datasets/uji_pen_chars2';
     '''
     #parse arguments
     import argparse

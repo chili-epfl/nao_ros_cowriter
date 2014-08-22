@@ -11,7 +11,7 @@
     <arg name="writing_surface_frame_id" default="writing_surface" /> 
 
     <!-- Where the datasets for generating letter models for the learning algorithm are stored -->
-    <arg name="letter_model_dataset_directory" default="$(find shape_learning)/letter_model_datasets" /> 
+    <arg name="letter_model_dataset_directory" default="default"/> 
     
     <!-- Inputs to learning algorithm -->
     <arg name="shape_feedback_topic" default="shape_feedback" />
